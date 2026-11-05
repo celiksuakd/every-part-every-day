@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Every Part Every Day – EPE & SMED game</title>
+<meta name="description" content="Browser game for lean value stream mapping: how flexible is each stage (EPE), which stage limits the plant, and how SMED gets you to every part every day.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a production planner's board. Every stage is one horizontal "day bar" of 900 minutes;
+   the game is about what fits in that bar once production, breakdowns and set-ups are paid for. */
+:root{
+  --paper:#EFEDE6; --card:#FAF9F5; --ink:#1D2026; --muted:#5E6470; --line:#CFCBC0;
+  --prod:#2F5A85; --down:#8D929B; --setup:#C4861A; --free:#DCE9D9; --other:#E1DED6;
+  --accent:#2F5A85; --bad:#B23A2B; --good:#2E7A4E; --warn:#C4861A;
+  --f-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#121417; --card:#1A1D22; --ink:#E4E6EA; --muted:#9AA1AD; --line:#2E333B;
+  --prod:#6E9BC9; --down:#6B717B; --setup:#E0A440; --free:#22382A; --other:#262A30;
+  --accent:#8DB5DD; --bad:#E57A66; --good:#6BC08F; --warn:#E0A440; color-scheme:dark}}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;margin:0}
+.wrap{max-width:1100px;margin:0 auto;padding-inline:20px;padding-block:28px 56px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:-.01em;text-wrap:balance;margin:0}
+h1{font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.05}
+h2{font-size:1.3rem} h3{font-size:1.02rem}
+p{margin:0}
+.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+header.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px 24px;border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+.score{font-family:var(--f-mono);font-size:.9rem;border:1.5px solid var(--ink);border-radius:20px;padding:4px 12px;white-space:nowrap}
+.stack{display:flex;flex-direction:column;gap:14px}
+.grid2{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:22px;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.steps span{font-size:.75rem;font-family:var(--f-mono);padding:3px 9px;border-radius:12px;border:1px solid var(--line);color:var(--muted)}
+.steps span.on{border-color:var(--ink);color:var(--ink);font-weight:500}
+.steps span.done{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.params{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.params div{background:var(--card);padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.params b{font-family:var(--f-mono);font-size:1.1rem;font-weight:500}
+.params small{color:var(--muted);font-size:.76rem}
+.btn{font:600 .95rem var(--f-body);border-radius:5px;padding:10px 16px;border:1.5px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+.btn:hover:not(:disabled){background:var(--ink);color:var(--paper)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.1);background:var(--accent)}
+.btn.small{padding:6px 11px;font-size:.82rem;font-weight:500}
+.btn.on{background:var(--ink);color:var(--paper)}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--setup);outline-offset:2px}
+.btns{display:flex;flex-wrap:wrap;gap:10px}
+.formula{font-family:var(--f-mono);font-size:.85rem;background:var(--paper);border:1px dashed var(--line);border-radius:4px;padding:10px 12px;overflow-x:auto;line-height:1.7}
+.msg{border-left:3px solid var(--line);padding:8px 12px;background:var(--paper);font-size:.9rem}
+.msg.ok{border-color:var(--good)} .msg.no{border-color:var(--bad)} .msg.info{border-color:var(--setup)}
+.msg b.ok{color:var(--good)} .msg b.no{color:var(--bad)}
+.ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ask input{font:500 1rem var(--f-mono);width:8.5em;padding:8px 10px;border:1.5px solid var(--ink);border-radius:5px;background:var(--card);color:var(--ink)}
+.ask input.ok{border-color:var(--good)} .ask input.no{border-color:var(--bad)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left}
+th{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+td.hl{color:var(--bad);font-weight:600} td.ok{color:var(--good);font-weight:600}
+/* day bars */
+.bars{display:flex;flex-direction:column;gap:14px;padding-top:6px}
+.barrow{display:grid;grid-template-columns:8.5em minmax(0,1fr);gap:10px;align-items:center}
+.barrow .nm{font-weight:600;font-size:.88rem;line-height:1.2}
+.barrow .nm small{display:block;font-weight:400;color:var(--muted);font-size:.74rem}
+.bar{position:relative;height:26px;display:flex;border-radius:3px;background:var(--card)}
+.bar i{height:100%;display:block;transition:width .35s ease;position:relative;overflow:hidden}
+.bar i em{font-style:normal;font-size:.62rem;font-family:var(--f-mono);color:var(--muted);position:absolute;left:5px;top:50%;transform:translateY(-50%);white-space:nowrap}
+.bar i.prod{background:var(--prod)}
+.bar i.down{background:repeating-linear-gradient(45deg,var(--down) 0 3px,transparent 3px 7px);border-block:1px solid var(--down)}
+.bar i.setup{background:var(--setup)}
+.bar i.free{background:var(--free);border-block:1px solid var(--line)}
+.bar i.over{background:repeating-linear-gradient(45deg,var(--bad) 0 4px,transparent 4px 8px);border:1.5px solid var(--bad)}
+.bar i.other{background:repeating-linear-gradient(-45deg,var(--other) 0 4px,transparent 4px 8px);border-block:1px solid var(--line)}
+.bar .mk{position:absolute;top:-5px;bottom:-5px;border-left:2px solid var(--ink)}
+.bar .mk.fam{border-left:2px dashed var(--ink)}
+.bar .mk span{position:absolute;top:-15px;right:4px;font-size:.62rem;font-family:var(--f-mono);white-space:nowrap;color:var(--muted)}
+.bar .mk.fam span{right:auto;left:4px}
+@media (max-width:620px){.barrow{grid-template-columns:minmax(0,1fr);gap:4px}.barrow .bar{margin-top:14px}.barnote{grid-column:1!important;margin-top:0!important}}
+.barnote{grid-column:2;font-size:.76rem;color:var(--muted);font-family:var(--f-mono);margin-top:-6px}
+.barnote b.no{color:var(--bad)} .barnote b.ok{color:var(--good)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.76rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:16px;height:11px;border-radius:2px;display:inline-block}
+.pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.pick button{text-align:left;font:500 .9rem var(--f-body);padding:12px;border-radius:6px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.pick button:hover{border-color:var(--ink)}
+.pick button.no{border-color:var(--bad);opacity:.65}
+.pick button.ok{border-color:var(--good);background:var(--free)}
+.pick button small{display:block;color:var(--muted);font-size:.75rem;margin-top:2px}
+/* SMED workshop */
+.el{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.el:last-child{border-bottom:0}
+.el .t{font-family:var(--f-mono);font-size:.9rem}
+.el .t s{color:var(--muted)}
+.tag{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;padding:2px 7px;border-radius:10px;font-weight:600;margin-left:6px;white-space:nowrap}
+.tag.int{background:var(--setup);color:#fff} .tag.ext{background:var(--free);color:var(--good);border:1px solid var(--good)}
+.el .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.meter{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.meter div{border-top:3px solid var(--line);padding-top:6px}
+.meter b{font-family:var(--f-mono);font-size:1.25rem;font-weight:500;display:block}
+.meter small{font-size:.74rem;color:var(--muted)}
+.meter .ok{color:var(--good)} .meter .no{color:var(--bad)}
+/* week grid */
+.week{display:grid;grid-template-columns:2.6em minmax(0,1fr);gap:4px 8px;align-items:center;font-size:.75rem;font-family:var(--f-mono);color:var(--muted)}
+.cells{display:grid;grid-template-columns:repeat(68,minmax(0,1fr));gap:1px}
+.cells i{height:14px;background:var(--other);border-radius:1px}
+.cells i.on{background:var(--prod)}
+.mc{display:flex;flex-direction:column;gap:8px}
+.mc button{text-align:left;font:500 .92rem var(--f-body);padding:11px 13px;border-radius:6px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.mc button:hover{border-color:var(--ink)}
+.mc button.no{border-color:var(--bad);opacity:.65} .mc button.ok{border-color:var(--good);background:var(--free)}
+.card h3{font-size:1.2rem}
+.card .meta{font-size:.82rem;color:var(--muted)}
+label.sl{display:flex;flex-direction:column;gap:3px;font-size:.8rem}
+label.sl .row{display:flex;justify-content:space-between}
+input[type=range]{width:100%;accent-color:var(--accent)}
+select{font:500 .9rem var(--f-body);padding:7px 10px;border-radius:5px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink)}
+.labgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.labgrid .panel{padding:12px 14px}
+footer{margin-top:40px;font-size:.78rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+/* ---------------------------------------------------------------- data */
+const T_MIN = 2 * (8 * 60 - 30);           // 900 min of available time per day (2 shifts, 30 min break each)
+const CASE_A = { key:'A', D:450, n:68, label:'Family A – 68 variants', stages:[
+  { name:'Machining', ct:95, co:10, a:.95, share:1, units:1 },
+  { name:'Heat treatment', ct:80, co:0, a:.95, share:1, units:1 },
+  { name:'Assembly', ct:105, co:0, a:1, share:1, units:1 } ]};
+const CASE_B = { key:'B', D:1800, n:6, label:'Family B – 6 variants', stages:[
+  { name:'Press', ct:4, co:120, a:.80, share:.60, units:1, unit:'foil' },
+  { name:'Cutter', ct:10, co:15, a:1, share:.70, units:2, unit:'pipe' },
+  { name:'Welding', ct:10, co:0, a:1, share:1, units:1 },
+  { name:'Drilling', ct:12, co:100, a:.95, share:1, units:1 },
+  { name:'Finishing', ct:23, co:0, a:1, share:1, units:1 } ]};
+
+const SMED = [
+  { id:'fetch',  name:'Fetch the next fixture and tools from the tool crib', t:2.0, canExt:true },
+  { id:'prog',   name:'Look up the part program and the drawing', t:1.0, canExt:true },
+  { id:'unbolt', name:'Unbolt and remove the old fixture', t:1.5, imp:{ name:'Quick-release clamps', after:0.3, cost:3 } },
+  { id:'mount',  name:'Mount and align the new fixture', t:2.5, imp:{ name:'Standard fixture plate with locating pins', after:0.6, cost:4 } },
+  { id:'tools',  name:'Change the cutting tools', t:1.5, imp:{ name:'Tools pre-set off-line in a magazine', after:0.4, cost:3 } },
+  { id:'trial',  name:'First-piece trial and adjustment', t:1.5, imp:{ name:'Standardised settings, no trial-and-error', after:0.3, cost:2 } },
+];
+const TPM = { name:'TPM on Machining: availability 95% → 100%', cost:6 };
+const BUDGET = 14;   // k€
+const MAX1 = 60, MAX2 = 75;
+
+/* ---------------------------------------------------------------- model */
+// All times in minutes per day. "fam" = time the stage works for this family.
+function metrics(st, D, n, target = 1){
+  const fam = T_MIN * st.share;
+  const down = fam * (1 - st.a);
+  const prod = D * st.units * st.ct / 60;
+  const free = fam - down - prod;                 // time left for set-ups
+  const setAll = n * st.co;                       // set-up time to make every variant once
+  const setNeed = st.co ? (n / target) * st.co : 0;
+  const used = prod + down + setNeed;
+  const epe = st.co === 0 ? 0 : (free > 0 ? setAll / free : Infinity);
+  return { fam, down, prod, free, setAll, setNeed, used, epe,
+           overflow: Math.max(0, used - fam), spare: Math.max(0, fam - used) };
+}
+const f0 = x => Math.round(x).toLocaleString('en-US');
+const f1 = x => (Math.round(x * 10) / 10).toLocaleString('en-US', { minimumFractionDigits:1, maximumFractionDigits:1 });
+const f2 = x => (Math.round(x * 100) / 100).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+const pct = x => Math.round(x * 100) + '%';
+const epeTxt = m => m.epe === 0 ? '1 day (no set-ups)' : (isFinite(m.epe) ? f2(m.epe) + ' days' : 'not capable');
+const near = (x, v, tol) => Math.abs(x - v) <= tol;
+const parse = s => { const v = parseFloat(String(s).replace(',', '.')); return isNaN(v) ? null : v; };
+
+/* ---------------------------------------------------------------- state */
+const fresh = () => ({
+  screen:'home',
+  m1:{ step:1, pts:{}, tries:{}, picked:[], hint:false, msg:{}, ext:{}, imp:{}, tpm:false, mistakes:0, smedMsg:'', ran:false },
+  m2:{ step:1, pts:{}, tries:{}, hints:{}, msg:{}, solved:{}, picked:[], mc:[], epeOk:false, stageOk:false, view:1 },
+  lab:{ key:'A', target:1, st:null },
+});
+let S = fresh();
+let best = {};
+try { best = JSON.parse(localStorage.getItem('epe-game-best') || '{}'); } catch(e) { best = {}; }
+const saveBest = (k, v) => { best[k] = Math.max(best[k] || 0, v); try { localStorage.setItem('epe-game-best', JSON.stringify(best)); } catch(e) {} };
+const sum = o => Math.max(0, Object.values(o).reduce((a, b) => a + b, 0));
+const total = () => sum(S.m1.pts) + sum(S.m2.pts);
+const app = document.getElementById('app');
+
+/* ---------------------------------------------------------------- shared pieces */
+function header(sub){
+  return `<header class="top"><div class="stack" style="gap:4px"><span class="eyebrow">Operations management · Lean & value stream mapping</span>
+  <h1>Every Part Every Day</h1></div>
+  <div class="stack" style="gap:8px;align-items:flex-end"><p class="muted" style="max-width:40ch;text-align:right">${sub}</p>
+  <span class="score" title="Points this session">Score ${total()} / ${MAX1 + MAX2}</span></div></header>`;
+}
+function steps(labels, cur){
+  return `<div class="steps">${labels.map((l, i) => `<span class="${i + 1 < cur ? 'done' : i + 1 === cur ? 'on' : ''}">${i + 1}. ${l}</span>`).join('')}</div>`;
+}
+const LEGEND = `<div class="legend"><span><i style="background:var(--prod)"></i>Production</span>
+  <span><i style="background:repeating-linear-gradient(45deg,var(--down) 0 3px,transparent 3px 7px);border:1px solid var(--down)"></i>Breakdowns (1 − A)</span>
+  <span><i style="background:var(--setup)"></i>Set-ups</span><span><i style="background:var(--free);border:1px solid var(--line)"></i>Spare</span>
+  <span><i style="background:repeating-linear-gradient(45deg,var(--bad) 0 4px,transparent 4px 8px);border:1px solid var(--bad)"></i>Does not fit</span>
+  <span><i style="background:repeating-linear-gradient(-45deg,var(--other) 0 4px,transparent 4px 8px);border:1px solid var(--line)"></i>Other families</span></div>`;
+
+// rows: [{st, m, hide, note}]
+function barsHTML(rows){
+  const scale = Math.min(2 * T_MIN, Math.max(T_MIN, ...rows.map(r => r.hide ? T_MIN : Math.max(T_MIN, r.m.fam + r.m.overflow))));
+  const w = v => (100 * Math.max(0, v) / scale).toFixed(3) + '%';
+  return `<div class="bars">${rows.map((r, idx) => {
+    const m = r.m, segs = [];
+    const prod = Math.min(m.prod, m.fam), down = Math.min(m.down, m.fam - prod);
+    segs.push(['prod', prod], ['down', down]);
+    let over = 0;
+    if (r.hide) { segs.push(['free', Math.max(0, m.free)]); }
+    else {
+      const room = Math.max(0, m.fam - prod - down);
+      segs.push(['setup', Math.min(m.setNeed, room)], ['free', m.spare]);
+      over = m.overflow; if (over > 0) segs.push(['over', Math.min(over, scale - m.fam)]);
+    }
+    const other = Math.max(0, T_MIN - m.fam - over);
+    if (other > 0) segs.push(['other', other]);
+    const marks = `<span class="mk" style="left:${w(T_MIN)}">${idx === 0 ? `<span>day ends · ${T_MIN} min</span>` : ''}</span>` +
+      (r.st.share < 1 ? `<span class="mk fam" style="left:${w(m.fam)}" title="${pct(r.st.share)} of the day for this family"></span>` : '');
+    return `<div class="barrow"><div class="nm">${r.st.name}<small>C/O ${r.st.co} min · A ${pct(r.st.a)}</small></div>
+      <div class="bar" role="img" aria-label="${r.st.name}: production ${f0(m.prod)} min, breakdowns ${f0(m.down)} min, set-ups ${f0(m.setNeed)} min">
+      ${segs.filter(s => s[1] > 0.01).map(s => `<i class="${s[0]}" style="width:${w(s[1])}">${s[0] === 'other' && 100 * s[1] / scale > 13 ? '<em>other families</em>' : ''}</i>`).join('')}${marks}</div>
+      ${r.note ? `<div class="barnote">${r.note}</div>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+function stageTable(c, extra){
+  const shared = c.stages.some(s => s.share < 1);
+  return `<div class="tbl"><table><thead><tr><th>Stage</th><th>C/T (s)</th><th>C/O (min)</th><th>A</th>${shared ? '<th>Share for family</th><th>Units / product</th>' : ''}${extra ? '<th>' + extra.h + '</th>' : ''}</tr></thead><tbody>
+  ${c.stages.map((s, i) => `<tr><td>${s.name}</td><td>${s.ct}${s.unit ? ' / ' + s.unit : ''}</td><td>${s.co}</td><td>${pct(s.a)}</td>${shared ? `<td>${pct(s.share)}</td><td>${s.units}</td>` : ''}${extra ? extra.f(s, i) : ''}</tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------------------------------------------------------------- home */
+function renderHome(){
+  app.innerHTML = header('How often can each stage make every variant? Find the stage that limits the plant, then fix it with SMED.') + `
+  <div class="grid2">
+    <section class="stack">
+      <h2>The idea in one bar</h2>
+      <p>Every stage has the same day: 2 shifts × (8 h − 30 min break) = <b class="num">900 min</b>. Production and breakdowns use part of it. Whatever is left is the only time you have for <b>set-ups</b> (changing from one variant to the next).</p>
+      <div class="panel stack">${barsHTML([{ st:CASE_A.stages[0], m:metrics(CASE_A.stages[0], CASE_A.D, CASE_A.n, 1),
+        note:'Machining, if it had to make all 68 variants today: the set-ups do not fit.' }])}${LEGEND}</div>
+      <div class="formula">EPE (days) = n × C/O ÷ time left for set-ups<br>time left = T × share × A − D × units per product × C/T<br><span class="muted">EPE = "every part every …" days. The plant is only as flexible as its least flexible stage.</span></div>
+    </section>
+    <section class="stack">
+      <div class="panel stack card"><span class="eyebrow">Mission 1 · Exercise 1, question 2</span><h3>Every variant, every day</h3>
+        <p class="meta">Family A: 68 low-volume variants, 450 pcs/day, three dedicated stages. The general manager wants every stage to make every variant every day. Find what stops it, then run a SMED workshop on a budget.</p>
+        <div class="btns"><button class="btn primary" data-go="m1">${S.m1.step > 1 ? 'Continue' : 'Play'}</button><span class="muted num" style="align-self:center">best ${best.m1 || 0} / ${MAX1}</span></div></div>
+      <div class="panel stack card"><span class="eyebrow">Mission 2 · Exercise 2, question 2</span><h3>What EPE can the plant promise?</h3>
+        <p class="meta">Family B: 6 high-volume variants, 1,800 pcs/day. The press and the cutter are shared with other families, and every product needs two pipes. Work out each stage's EPE and the company's.</p>
+        <div class="btns"><button class="btn primary" data-go="m2">${S.m2.step > 1 ? 'Continue' : 'Play'}</button><span class="muted num" style="align-self:center">best ${best.m2 || 0} / ${MAX2}</span></div></div>
+      <div class="panel stack card"><span class="eyebrow">Sandbox</span><h3>What-if lab</h3>
+        <p class="meta">Move set-up times, availability and shares and watch every stage's day bar and EPE update.</p>
+        <div class="btns"><button class="btn" data-go="lab">Open the lab</button>${total() ? '<button class="btn small" id="reset">Reset session</button>' : ''}</div></div>
+    </section>
+  </div>
+  <footer>A study aid for value stream mapping exercises. Numbers follow the exercise data; the SMED breakdown, costs and budget in Mission 1 are invented for the game.</footer>`;
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; render(); });
+  const r = document.getElementById('reset'); if (r) r.onclick = () => { S = fresh(); render(); };
+}
+
+/* ---------------------------------------------------------------- mission 1 */
+function smedState(){
+  const m = S.m1;
+  let internal = 0, external = 0, cost = m.tpm ? TPM.cost : 0;
+  SMED.forEach(e => {
+    const t = m.imp[e.id] ? e.imp.after : e.t;
+    if (m.imp[e.id]) cost += e.imp.cost;
+    if (m.ext[e.id]) external += t; else internal += t;
+  });
+  const st = { ...CASE_A.stages[0], co:internal, a: m.tpm ? 1 : .95 };
+  const mm = metrics(st, CASE_A.D, CASE_A.n, 1);
+  return { internal, external, cost, st, mm, maxCO: mm.free / CASE_A.n, ok: mm.epe <= 1 + 1e-9 };
+}
+
+function renderM1(){
+  const m = S.m1, c = CASE_A;
+  const labels = ['Spot the problem', 'Measure it', 'SMED workshop', 'Run the week'];
+  let body = '';
+  const mach = metrics(c.stages[0], c.D, c.n, 1);
+
+  if (m.step === 1){
+    const solved = !!m.pts.spot || m.picked.includes(0);
+    body = `<div class="grid2"><section class="stack">
+      <h2>The general manager's target</h2>
+      <p>Every stage must be flexible enough to make <b>all 68 variants every day</b>. Before you promise anything, look at how each stage's day is used.</p>
+      <div class="params"><div><small>Demand D</small><b>450</b><small>pcs/day, ≈ 6.6 per variant</small></div><div><small>Variants n</small><b>68</b><small>A1 … A68</small></div><div><small>Available time</small><b>900</b><small>min/day per stage</small></div><div><small>Takt time</small><b>120 s</b><small>54,000 s ÷ 450</small></div></div>
+      ${stageTable(c)}
+    </section><section class="panel stack">
+      <h2>${solved ? 'Day bars with every variant every day' : 'Day bars before set-ups'}</h2>
+      ${barsHTML(c.stages.map(s => { const mm = metrics(s, c.D, c.n, 1);
+        return { st:s, m:mm, hide:!solved, note: solved ? (s.co ? `set-ups needed ${f0(mm.setNeed)} min · time left ${f1(mm.free)} min → <b class="no">${f0(mm.overflow)} min short</b>` : `no set-up → <b class="ok">every variant every day is free</b>`)
+          : `production ${f0(mm.prod)} min · breakdowns ${f0(mm.down)} min · left ${f1(mm.free)} min` }; }))}
+      ${LEGEND}
+      <h3>Which stage cannot make every variant every day?</h3>
+      <div class="pick">${c.stages.map((s, i) => `<button data-p="${i}" class="${m.picked.includes(i) ? (i === 0 ? 'ok' : 'no') : ''}" ${solved ? 'disabled' : ''}>${s.name}<small>C/O ${s.co} min · ${f1(metrics(s, c.D, c.n).free)} min left</small></button>`).join('')}</div>
+      ${m.msg.spot ? `<div class="msg ${solved ? 'ok' : 'no'}">${m.msg.spot}</div>` : ''}
+      ${solved ? '<div class="btns"><button class="btn primary" id="next">Measure it →</button></div>' : ''}
+    </section></div>`;
+  }
+
+  if (m.step === 2){
+    const freeOk = !!m.msg.freeOk, epeOk = !!m.msg.epeOk;
+    body = `<div class="grid2"><section class="stack">
+      <h2>How flexible is Machining today?</h2>
+      ${barsHTML([{ st:c.stages[0], m:mach, note:`needs ${f0(mach.setNeed)} min of set-ups a day for every part every day` }])}
+      ${stageTable({ stages:[c.stages[0]] })}
+      ${m.hint ? `<div class="formula">time left = 900 × A − D × C/T ÷ 60<br>EPE = n × C/O ÷ time left</div>` : `<div class="btns"><button class="btn small" id="hint">Show the formulas (−4 points)</button></div>`}
+    </section><section class="panel stack">
+      <h3>a) Time left for set-ups on Machining (min/day)</h3>
+      <div class="ask"><input id="free" inputmode="decimal" placeholder="min/day" class="${freeOk ? 'ok' : ''}" ${freeOk ? 'disabled value="' + f1(mach.free) + '"' : ''}><button class="btn small" id="cfree" ${freeOk ? 'disabled' : ''}>Check</button></div>
+      ${m.msg.free ? `<div class="msg ${freeOk ? 'ok' : 'no'}">${m.msg.free}</div>` : ''}
+      <h3>b) EPE of Machining (days)</h3>
+      <div class="ask"><input id="epe" inputmode="decimal" placeholder="days" class="${epeOk ? 'ok' : ''}" ${epeOk ? 'disabled value="' + f2(mach.epe) + '"' : ''} ${freeOk ? '' : 'disabled'}><button class="btn small" id="cepe" ${epeOk || !freeOk ? 'disabled' : ''}>Check</button></div>
+      ${m.msg.epe ? `<div class="msg ${epeOk ? 'ok' : 'no'}">${m.msg.epe}</div>` : ''}
+      ${epeOk ? `<div class="msg info">Heat treatment and Assembly have no set-ups, so their EPE is 1 day already. <b>The company EPE is ${f2(mach.epe)} ≈ 5 days, set by Machining.</b> To reach 1 day, Machining must fit 68 set-ups into ${f1(mach.free)} min: <b class="num">C/O ≤ ${f2(mach.free / 68)} min</b>.</div>
+        <div class="btns"><button class="btn primary" id="next">Go to the SMED workshop →</button></div>` : ''}
+    </section></div>`;
+  }
+
+  if (m.step === 3){
+    const s = smedState();
+    body = `<div class="grid2"><section class="panel stack">
+      <h2>Machining changeover, element by element</h2>
+      <p class="muted" style="font-size:.88rem">Today the 10-minute set-up is all <b>internal</b> (the machine is stopped). SMED step 1: move what can be done while the machine is still running to <b>external</b>. Step 2: shorten what has to stay internal. You have <b class="num">${BUDGET} k€</b>.</p>
+      <div>${SMED.map(e => { const ext = !!S.m1.ext[e.id], imp = !!S.m1.imp[e.id];
+        return `<div class="el"><div>${e.name}<span class="tag ${ext ? 'ext' : 'int'}">${ext ? 'external' : 'internal'}</span></div>
+          <div class="t">${imp ? `<s>${f1(e.t)}</s> ${f1(e.imp.after)}` : f1(e.t)} min</div>
+          <div class="acts"><button class="btn small ${ext ? 'on' : ''}" data-ext="${e.id}">${ext ? '✓ Done while the machine runs' : 'Do it while the machine runs'}</button>
+          ${e.imp ? `<button class="btn small ${imp ? 'on' : ''}" data-imp="${e.id}" ${!imp && s.cost + e.imp.cost > BUDGET ? 'disabled' : ''}>${imp ? '✓ ' : ''}${e.imp.name} · ${e.imp.cost} k€</button>` : ''}</div></div>`; }).join('')}
+        <div class="el"><div>${TPM.name}<span class="tag int">availability</span></div><div class="t">${S.m1.tpm ? '100%' : '95%'}</div>
+          <div class="acts"><button class="btn small ${S.m1.tpm ? 'on' : ''}" data-tpm="1" ${!S.m1.tpm && s.cost + TPM.cost > BUDGET ? 'disabled' : ''}>${S.m1.tpm ? '✓ ' : ''}TPM programme · ${TPM.cost} k€</button></div></div>
+      </div>
+      ${S.m1.smedMsg ? `<div class="msg ${S.m1.smedMsg.startsWith('✓') ? 'ok' : 'no'}">${S.m1.smedMsg}</div>` : ''}
+    </section><section class="stack">
+      <div class="panel stack"><h3>Live result for Machining</h3>
+        <div class="meter">
+          <div><small>Internal set-up (C/O)</small><b class="${s.ok ? 'ok' : 'no'}">${f2(s.internal)} min</b></div>
+          <div><small>Max C/O for EPE = 1 day</small><b>${f2(s.maxCO)} min</b></div>
+          <div><small>EPE</small><b class="${s.ok ? 'ok' : 'no'}">${f2(s.mm.epe)} d</b></div>
+          <div><small>Budget used</small><b class="${s.cost > BUDGET ? 'no' : ''}">${s.cost} / ${BUDGET} k€</b></div>
+        </div>
+        ${barsHTML([{ st:s.st, m:s.mm, note: s.ok ? `<b class="ok">68 set-ups fit: every part every day ✓</b>` : `68 set-ups need ${f0(s.mm.setNeed)} min, only ${f1(s.mm.free)} min left → <b class="no">${f0(s.mm.overflow)} min short</b>` }])}
+        ${LEGEND}
+        <p class="muted" style="font-size:.84rem">External work (${f1(s.external)} min) is done while the machine still runs the previous variant, so it does not cost machine time.</p>
+        <div class="btns"><button class="btn primary" id="next" ${s.ok ? '' : 'disabled'}>Run the week →</button></div>
+      </div>
+    </section></div>`;
+  }
+
+  if (m.step === 4){
+    const s = smedState();
+    const perBefore = Math.floor(mach.free / 10), perAfter = Math.min(68, Math.floor(s.mm.free / s.internal));
+    const epeAfter = Math.max(1, s.mm.epe);
+    body = `<div class="stack">
+      <div class="grid2"><section class="panel stack"><h3>Before: C/O 10 min</h3>
+        <p class="muted" style="font-size:.86rem">${perBefore} set-ups fit in a day, so each day covers only ${perBefore} variants.</p>
+        <div class="week" id="wb"></div>
+        <div class="meter"><div><small>EPE</small><b class="no">${f2(mach.epe)} d</b></div><div><small>Batch per variant</small><b>${f0(c.D / c.n * mach.epe)} pcs</b></div><div><small>Avg. cycle stock</small><b>${f0(c.D * mach.epe / 2)} pcs</b></div></div>
+      </section><section class="panel stack"><h3>After your workshop: C/O ${f2(s.internal)} min</h3>
+        <p class="muted" style="font-size:.86rem">${perAfter >= 68 ? 'All 68 set-ups fit in the day.' : perAfter + ' set-ups fit in a day.'}</p>
+        <div class="week" id="wa"></div>
+        <div class="meter"><div><small>EPE</small><b class="ok">${f2(epeAfter)} d</b></div><div><small>Batch per variant</small><b>${f1(c.D / c.n * epeAfter)} pcs</b></div><div><small>Avg. cycle stock</small><b>${f0(c.D * epeAfter / 2)} pcs</b></div></div>
+      </section></div>
+      <div class="btns"><button class="btn primary" id="run">${m.ran ? 'Run it again' : '▶ Run the week'}</button></div>
+      ${m.ran ? debrief1({ ...s, epe0:mach.epe }) : ''}
+    </div>`;
+  }
+
+  app.innerHTML = header('Mission 1 · Family A, 68 variants') + `<div class="stack">
+    <div class="btns" style="justify-content:space-between"><button class="btn small" id="home">← Missions</button>${steps(labels, m.step)}</div>${body}</div>`;
+  wireM1();
+}
+
+function debrief1(s){
+  const pts = sum(S.m1.pts);
+  return `<section class="panel stack"><h2>Debrief · ${pts} / ${MAX1} points</h2>
+    <div class="formula">Machining: T × A = 900 × 0.95 = 855 min · production = 450 × 95 s ÷ 60 = 712.5 min<br>
+    time left for set-ups = 142.5 min/day · set-ups for all variants = 68 × 10 = 680 min<br>
+    EPE = 680 ÷ 142.5 = <b>4.77 ≈ 5 days</b> (Heat treatment, Assembly: no C/O → 1 day)<br>
+    EPE = 1 day → 68 set-ups/day → C/O ≤ 142.5 ÷ 68 = <b>2.10 min</b> (−79%) → <b>SMED on Machining</b></div>
+    <p><b>Course answer:</b> only Machining blocks the target, and the fix is SMED on Machining, cutting each set-up to ≤ 2.1 min. Your workshop reached <b class="num">${f2(s.internal)} min</b> for <b class="num">${s.cost} k€</b>${s.cost === 12 && !S.m1.tpm ? ', the cheapest way to get there' : ''}.</p>
+    <p>Why TPM alone is not enough: at 100% availability the limit only rises to ${f2((900 - 712.5) / 68)} min, still far below 10 min. Separating internal from external work is free and gets you from 10 to 7 min before you spend anything.</p>
+    <p>Why it matters: a shorter EPE means smaller batches (≈ ${f1(450 / 68)} pcs per variant instead of ≈ ${f0(450 / 68 * s.epe0)}) and about ${f0(450 * s.epe0 / 2 - 450 / 2)} fewer pieces of cycle stock on the floor.</p>
+    <div class="btns"><button class="btn primary" data-go="m2">Mission 2 →</button><button class="btn" data-go="home">Back to missions</button></div></section>`;
+}
+
+function wireM1(){
+  const m = S.m1, c = CASE_A, $ = id => document.getElementById(id);
+  $('home').onclick = () => { S.screen = 'home'; render(); };
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; render(); });
+  const next = $('next'); if (next) next.onclick = () => { m.step++; render(); };
+  if (m.step === 1) app.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.p; if (m.picked.includes(i)) return;
+    m.picked.push(i); m.tries.spot = (m.tries.spot || 0) + 1;
+    if (i === 0){ m.pts.spot = m.tries.spot === 1 ? 10 : m.tries.spot === 2 ? 4 : 0;
+      m.msg.spot = `<b class="ok">Right.</b> Machining needs 68 × 10 = 680 min of set-ups a day but has only 142.5 min left after production and breakdowns. Heat treatment and Assembly change variant with no set-up.`; }
+    else m.msg.spot = `<b class="no">Not this one.</b> ${c.stages[i].name} has C/O = 0: switching variant costs no time, so it can make all 68 every day. Which stage loses time at every change?`;
+    render();
+  });
+  if (m.step === 2){
+    const mach = metrics(c.stages[0], c.D, c.n);
+    if ($('hint')) $('hint').onclick = () => { m.hint = true; m.pts.hint = -4; render(); };
+    const chkFree = () => { const v = parse($('free').value); if (v === null) return;
+      m.tries.free = (m.tries.free || 0) + 1;
+      if (near(v, mach.free, 1)){ m.msg.freeOk = true; m.pts.free = m.tries.free === 1 ? 10 : 5; m.msg.free = `<b class="ok">Correct:</b> 900 × 0.95 − 450 × 95 ÷ 60 = 855 − 712.5 = 142.5 min/day.`; }
+      else if (near(v, 187.5, 1)) m.msg.free = `<b class="no">Close.</b> You used the full 900 min. Machining is down 5% of the time (A = 95%).`;
+      else if (near(v, 855, 1)) m.msg.free = `<b class="no">That is the time the machine is available.</b> Production of 450 pcs still has to come out of it.`;
+      else m.msg.free = `<b class="no">Not yet.</b> Start from 900 min, remove breakdowns (1 − A), then remove production time (D × C/T).`;
+      render(); };
+    const chkEpe = () => { const v = parse($('epe').value); if (v === null) return;
+      m.tries.epe = (m.tries.epe || 0) + 1;
+      if (near(v, mach.epe, 0.08) || v === 5){ m.msg.epeOk = true; m.pts.epe = m.tries.epe === 1 ? 10 : 5;
+        m.msg.epe = `<b class="ok">${v === 5 ? 'Yes, 5 whole days' : 'Correct'}:</b> 68 × 10 ÷ 142.5 = 4.77 days. Machining can cycle through all 68 variants only about once every 5 days.`; }
+      else if (near(v, 1 / mach.epe, 0.03)) m.msg.epe = `<b class="no">Upside down.</b> EPE = set-up time needed ÷ set-up time available per day.`;
+      else if (near(v, 680 / 187.5, 0.05)) m.msg.epe = `<b class="no">Check the time left:</b> use 142.5 min, not 187.5.`;
+      else m.msg.epe = `<b class="no">Not yet.</b> How many minutes do 68 set-ups take, and how many days of 142.5 free minutes is that?`;
+      render(); };
+    if ($('cfree')) $('cfree').onclick = chkFree;
+    if ($('cepe')) $('cepe').onclick = chkEpe;
+    ['free', 'epe'].forEach(id => { const el = $(id); if (el && !el.disabled) el.onkeydown = e => { if (e.key === 'Enter') (id === 'free' ? chkFree : chkEpe)(); }; });
+    const focus = !m.msg.freeOk ? $('free') : (!m.msg.epeOk ? $('epe') : null); if (focus) focus.focus();
+  }
+  if (m.step === 3){
+    app.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => {
+      const e = SMED.find(x => x.id === b.dataset.ext);
+      if (m.ext[e.id]) { delete m.ext[e.id]; m.smedMsg = ''; }
+      else if (e.canExt) { m.ext[e.id] = true; m.smedMsg = `✓ Moved to external: "${e.name.toLowerCase()}" now happens while the previous variant is still running. It costs nothing.`; }
+      else { m.mistakes++; m.smedMsg = `The machine has to be stopped for this ("${e.name.toLowerCase()}"), so it stays internal. Shorten it instead (−2 points).`; }
+      render(); });
+    app.querySelectorAll('[data-imp]').forEach(b => b.onclick = () => { const id = b.dataset.imp; if (m.imp[id]) delete m.imp[id]; else m.imp[id] = true; m.smedMsg = ''; render(); });
+    app.querySelectorAll('[data-tpm]').forEach(b => b.onclick = () => { m.tpm = !m.tpm;
+      m.smedMsg = m.tpm ? `TPM raises availability to 100%, so the time left grows to 187.5 min and the C/O limit to 2.76 min. It helps, but it uses ${TPM.cost} k€ of your budget.` : ''; render(); });
+    const n = $('next'); if (n) n.onclick = () => { m.pts.smed = Math.max(10, 30 - 2 * m.mistakes); m.step = 4; render(); };
+  }
+  if (m.step === 4){
+    const s = smedState(), mach = metrics(c.stages[0], c.D, c.n);
+    const perB = Math.floor(mach.free / 10), perA = Math.min(68, Math.floor(s.mm.free / s.internal));
+    const draw = (id, per, upto) => { let h = '';
+      for (let d = 0; d < 5; d++){ h += `<span>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][d]}</span><div class="cells">`;
+        for (let v = 0; v < 68; v++){ const start = (d * per) % 68; const on = d < upto && (per >= 68 || ((v - start + 68) % 68) < per); h += `<i class="${on ? 'on' : ''}"></i>`; }
+        h += '</div>'; }
+      $(id).innerHTML = h; };
+    draw('wb', perB, m.ran ? 5 : 0); draw('wa', perA, m.ran ? 5 : 0);
+    $('run').onclick = () => {
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let d = 0; const tick = () => { d++; draw('wb', perB, d); draw('wa', perA, d);
+        if (d < 5 && !reduce) setTimeout(tick, 380); else { if (!m.ran){ m.ran = true; saveBest('m1', sum(m.pts)); } render(); } };
+      if (reduce) { d = 4; } tick(); };
+  }
+}
+
+/* ---------------------------------------------------------------- mission 2 */
+const M2Q = { 0:'press', 1:'cutter', 3:'drilling' };
+const M2HINT = {
+  press:['Time the press works for family B: 54,000 s × 60% × 80% = 25,920 s = 432 min.', 'Production: 1,800 × 4 s = 7,200 s = 120 min → 312 min left. Set-ups for all variants: 6 × 120 min.'],
+  cutter:['Time the cutter works for family B: 54,000 s × 70% × 100% = 37,800 s = 630 min.', 'Every product needs 2 pipes: 3,600 × 10 s = 36,000 s = 600 min → 30 min left. Set-ups: 6 × 15 min.'],
+  drilling:['Available: 54,000 s × 95% = 51,300 s = 855 min.', 'Production: 1,800 × 12 s = 21,600 s = 360 min → 495 min left. Set-ups: 6 × 100 min.'],
+};
+const M2WRONG = {   // typical slips → tailored feedback
+  press:[[1.2, 'You used the whole day. The press works only 60% of its time for family B.'], [1.71, 'Availability is 80%: a fifth of the press time is lost to breakdowns.'], [0.92, 'Two slips: the press works only 60% of its time for family B, and A = 80%.']],
+  cutter:[[0.27, 'Each product needs two pipes, so the cutter makes 3,600 pipes a day, not 1,800.'], [0.3, 'The cutter works only 70% of its time for family B.'], [0.15, 'Two slips: the 70% share and the 2 pipes per product.']],
+  drilling:[[1.11, 'Availability is 95%: drilling loses 45 min a day to breakdowns.']],
+};
+function renderM2(){
+  const m = S.m2, c = CASE_B;
+  const labels = ['EPE of each stage', 'Company EPE', 'Why?', 'Debrief'];
+  const M = c.stages.map(s => metrics(s, c.D, c.n, 1));
+  let body = '';
+
+  if (m.step === 1){
+    const all = Object.values(M2Q).every(k => m.solved[k]);
+    body = `<div class="grid2"><section class="stack">
+      <h2>Family B data</h2>
+      <div class="params"><div><small>Demand D</small><b>1,800</b><small>pcs/day, 300 per variant</small></div><div><small>Variants n</small><b>6</b><small>B1 … B6</small></div><div><small>Available time</small><b>900</b><small>min/day</small></div><div><small>Takt time</small><b>30 s</b><small>54,000 s ÷ 1,800</small></div></div>
+      ${stageTable(c)}
+      <p class="muted" style="font-size:.85rem">Press and cutter feed the welding in parallel. Two identical pipes are welded on every foil.</p>
+      ${barsHTML(c.stages.map((s, i) => ({ st:s, m:M[i], hide: !!(s.co && !m.solved[M2Q[i]]),
+        note: s.co === 0 ? 'no set-up → EPE 1 day' : (m.solved[M2Q[i]] ? `every part every day needs ${f0(M[i].setNeed)} min of set-ups, ${f1(M[i].free)} min left → EPE <b class="no">${f2(M[i].epe)} d</b>` : 'set-ups hidden until you solve it') })))}
+      ${LEGEND}
+    </section><section class="panel stack">
+      <h2>EPE of each stage (days)</h2>
+      <p class="muted" style="font-size:.87rem">Welding and finishing have no set-ups, so their EPE is 1 day. Work out the other three. Hints cost 3 points each.</p>
+      ${c.stages.map((s, i) => { const k = M2Q[i]; if (!k) return ''; const ok = !!m.solved[k]; const h = m.hints[k] || 0;
+        return `<div class="stack" style="gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)"><h3>${s.name}</h3>
+        <div class="ask"><input data-in="${k}" inputmode="decimal" placeholder="days" class="${ok ? 'ok' : ''}" ${ok ? 'disabled value="' + f2(M[i].epe) + '"' : ''}>
+        <button class="btn small" data-chk="${k}" data-i="${i}" ${ok ? 'disabled' : ''}>Check</button>
+        ${!ok && h < 2 ? `<button class="btn small" data-hint="${k}">Hint ${h + 1}</button>` : ''}</div>
+        ${M2HINT[k].slice(0, h).map(t => `<div class="msg info">${t}</div>`).join('')}
+        ${m.msg[k] ? `<div class="msg ${ok ? 'ok' : 'no'}">${m.msg[k]}</div>` : ''}</div>`; }).join('')}
+      ${all ? '<div class="btns"><button class="btn primary" id="next">Company EPE →</button></div>' : ''}
+    </section></div>`;
+  }
+
+  if (m.step === 2){
+    const done = m.epeOk && m.stageOk;
+    body = `<div class="grid2"><section class="stack">
+      <h2>Your stage EPEs</h2>
+      ${stageTable(c, { h:'EPE (days)', f:(s, i) => `<td class="${s.co ? '' : 'ok'}">${s.co ? f2(M[i].epe) : '1 (no C/O)'}</td>` })}
+      ${barsHTML(c.stages.map((s, i) => ({ st:s, m:metrics(s, c.D, c.n, 3), note: s.co ? `at EPE 3 days: ${f0(metrics(s, c.D, c.n, 3).setNeed)} of ${f1(M[i].free)} min used` : '' })))}
+      <p class="muted" style="font-size:.84rem">Bars drawn for one full cycle of B1…B6 every 3 days.</p>
+    </section><section class="panel stack">
+      <h3>a) Every how many days can the plant make every variant? (whole days)</h3>
+      <div class="ask"><input id="ce" inputmode="decimal" placeholder="days" class="${m.epeOk ? 'ok' : ''}" ${m.epeOk ? 'disabled value="3"' : ''}><button class="btn small" id="cce" ${m.epeOk ? 'disabled' : ''}>Check</button></div>
+      ${m.msg.ce ? `<div class="msg ${m.epeOk ? 'ok' : 'no'}">${m.msg.ce}</div>` : ''}
+      <h3>b) Which stage sets it?</h3>
+      <div class="pick">${c.stages.map((s, i) => `<button data-st="${i}" class="${m.picked.includes(i) ? (i === 1 ? 'ok' : 'no') : ''}" ${m.stageOk ? 'disabled' : ''}>${s.name}<small>EPE ${s.co ? f2(M[i].epe) : '1'} d</small></button>`).join('')}</div>
+      ${m.msg.st ? `<div class="msg ${m.stageOk ? 'ok' : 'no'}">${m.msg.st}</div>` : ''}
+      ${done ? '<div class="btns"><button class="btn primary" id="next">One more question →</button></div>' : ''}
+    </section></div>`;
+  }
+
+  if (m.step === 3){
+    const opts = [
+      ['Its set-up is the longest in the plant.', false, 'No: 15 min against 120 min at the press and 100 min at drilling.'],
+      ['It is almost full: 2 pipes per product on 70% of the day leave only 30 min a day for set-ups.', true, ''],
+      ['It has the lowest availability.', false, 'No: the cutter has A = 100%, the best in the plant.'],
+      ['It has to make more variants than the other stages.', false, 'No: every stage makes the same 6 variants (one pipe type per product).'],
+    ];
+    const solved = m.mc.includes(1);
+    body = `<div class="grid2"><section class="stack"><h2>The cutter has the shortest set-up of the three. Why is it the least flexible?</h2>
+      ${barsHTML([0, 1].map(i => ({ st:c.stages[i], m:M[i], note:`utilisation ${pct(M[i].prod / (M[i].fam - M[i].down))} of its family-B time` })))}${LEGEND}</section>
+      <section class="panel stack"><div class="mc">${opts.map((o, i) => `<button data-mc="${i}" class="${m.mc.includes(i) ? (o[1] ? 'ok' : 'no') : ''}" ${solved ? 'disabled' : ''}>${o[0]}</button>`).join('')}</div>
+      ${m.msg.mc ? `<div class="msg ${solved ? 'ok' : 'no'}">${m.msg.mc}</div>` : ''}
+      ${solved ? '<div class="btns"><button class="btn primary" id="next">Debrief →</button></div>' : ''}</section></div>`;
+  }
+
+  if (m.step === 4){
+    const pts = sum(m.pts);
+    body = `<div class="grid2"><section class="panel stack"><h2>Debrief · ${pts} / ${MAX2} points</h2>
+      <div class="tbl"><table><thead><tr><th>Stage</th><th>Time for fam. B (min)</th><th>Production (min)</th><th>Left for C/O (min)</th><th>n × C/O (min)</th><th>EPE (days)</th></tr></thead><tbody>
+      ${c.stages.map((s, i) => `<tr><td>${s.name}</td><td>${f1(M[i].fam - M[i].down)}</td><td>${f1(M[i].prod)}</td><td>${f1(M[i].free)}</td><td>${f0(M[i].setAll)}</td><td class="${i === 1 ? 'hl' : ''}">${s.co ? f2(M[i].epe) : '1'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="formula">EPE = n × C/O ÷ (T × share × A − D × units × C/T)<br>Cutter: 6 × 15 ÷ (630 − 3,600 × 10 s ÷ 60) = 90 ÷ 30 = <b>3.00 d</b><br>Press: 6 × 120 ÷ (432 − 120) = 720 ÷ 312 = 2.31 d · Drilling: 600 ÷ (855 − 360) = 1.21 d<br>Company EPE = max = <b>3 days, set by the cutter</b></div>
+      <p><b>Course answer:</b> today the plant can cycle through B1…B6 only once every 3 days. The cutter limits it (3.00 d), with the press close behind (2.31 d) and drilling at 1.21 d. Customers order every variant every day, so this gap has to be covered with finished-goods stock.</p>
+      <p>Next step (question 3 of the exercise): to cap WIP at 2,700 pieces, the press and cutter need EPE = 1 day (C/O ≤ 52 min and ≤ 5 min) and drilling needs C/O ≤ 13.75 min inside the new cell. Try it in the lab.</p>
+      <div class="btns"><button class="btn primary" data-go="lab">Open the lab</button><button class="btn" data-go="home">Back to missions</button></div>
+    </section><section class="stack"><h3>Every part every day vs every 3 days</h3>
+      <div class="btns"><button class="btn small ${m.view === 1 ? 'on' : ''}" data-view="1">EPE 1 day</button><button class="btn small ${m.view === 3 ? 'on' : ''}" data-view="3">EPE 3 days</button></div>
+      ${barsHTML(c.stages.map(s => { const mm = metrics(s, c.D, c.n, m.view); return { st:s, m:mm, note: s.co ? (mm.overflow > 0 ? `<b class="no">${f0(mm.overflow)} min short</b>` : `<b class="ok">fits</b> (${f0(mm.setNeed)} min of set-ups)`) : '' }; }))}${LEGEND}</section></div>`;
+  }
+
+  app.innerHTML = header('Mission 2 · Family B, 6 variants') + `<div class="stack">
+    <div class="btns" style="justify-content:space-between"><button class="btn small" id="home">← Missions</button>${steps(labels, m.step)}</div>${body}</div>`;
+  wireM2(M);
+}
+
+function wireM2(M){
+  const m = S.m2, c = CASE_B, $ = id => document.getElementById(id);
+  $('home').onclick = () => { S.screen = 'home'; render(); };
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; if (b.dataset.go === 'lab') S.lab = { key:'B', target:1, st:null }; render(); });
+  const next = $('next'); if (next) next.onclick = () => { m.step++; if (m.step === 4) saveBest('m2', sum(m.pts)); render(); };
+  if (m.step === 1){
+    app.querySelectorAll('[data-hint]').forEach(b => b.onclick = () => { const k = b.dataset.hint; m.hints[k] = (m.hints[k] || 0) + 1; render(); });
+    const check = (k, i) => {
+      const v = parse(app.querySelector(`[data-in="${k}"]`).value); if (v === null) return;
+      m.tries[k] = (m.tries[k] || 0) + 1;
+      const right = M[i].epe;
+      if (near(v, right, 0.05)){
+        m.solved[k] = true;
+        const base = m.tries[k] === 1 ? 15 : m.tries[k] === 2 ? 10 : 6;
+        m.pts[k] = Math.max(3, base - 3 * (m.hints[k] || 0));
+        m.msg[k] = `<b class="ok">Correct: ${f2(right)} days.</b> ${f0(M[i].setAll)} min of set-ups ÷ ${f1(M[i].free)} min left per day.`;
+      } else {
+        const w = (M2WRONG[k] || []).find(x => near(v, x[0], 0.012));
+        m.msg[k] = `<b class="no">Not yet.</b> ${w ? w[1] : 'Time left = T × share × A − D × units × C/T, then EPE = n × C/O ÷ time left.'}`;
+      }
+      render();
+      const nextIn = app.querySelector('[data-in]:not([disabled])'); if (nextIn) nextIn.focus();
+    };
+    app.querySelectorAll('[data-chk]').forEach(b => b.onclick = () => check(b.dataset.chk, +b.dataset.i));
+    app.querySelectorAll('[data-in]').forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter'){ const k = inp.dataset.in; check(k, +Object.keys(M2Q).find(x => M2Q[x] === k)); } });
+  }
+  if (m.step === 2){
+    const chk = () => { const v = parse($('ce').value); if (v === null) return; m.tries.ce = (m.tries.ce || 0) + 1;
+      if (v === 3 || near(v, 3, 0.01)){ m.epeOk = true; m.pts.ce = m.tries.ce === 1 ? 10 : 5; m.msg.ce = `<b class="ok">Correct: 3 days.</b> The plant can only promise what its least flexible stage can do.`; }
+      else if (near(v, 2.31, 0.1) || v === 2) m.msg.ce = `<b class="no">That is the press.</b> Another stage needs even longer to cycle through all six variants.`;
+      else if (v < 2) m.msg.ce = `<b class="no">Too optimistic.</b> Can every stage really make all six variants that often?`;
+      else m.msg.ce = `<b class="no">Not quite.</b> Take the largest stage EPE and round it up to whole days.`;
+      render(); };
+    if ($('cce')) $('cce').onclick = chk;
+    if ($('ce') && !$('ce').disabled){ $('ce').onkeydown = e => { if (e.key === 'Enter') chk(); }; $('ce').focus(); }
+    app.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { const i = +b.dataset.st; if (m.picked.includes(i)) return; m.picked.push(i); m.tries.st = (m.tries.st || 0) + 1;
+      if (i === 1){ m.stageOk = true; m.pts.st = m.tries.st === 1 ? 10 : m.tries.st === 2 ? 5 : 0; m.msg.st = `<b class="ok">The cutter.</b> 3.00 days, ahead of the press at 2.31 days.`; }
+      else if (i === 0) m.msg.st = `<b class="no">Close.</b> The press has the longest set-up, but it still cycles in 2.31 days. One stage needs longer.`;
+      else m.msg.st = `<b class="no">No.</b> ${c.stages[i].name} cycles in ${c.stages[i].co ? f2(M[i].epe) : '1'} day(s).`;
+      render(); });
+  }
+  if (m.step === 3) app.querySelectorAll('[data-mc]').forEach(b => b.onclick = () => { const i = +b.dataset.mc; if (m.mc.includes(i)) return; m.mc.push(i);
+    const why = ['No: 15 min against 120 min at the press and 100 min at drilling.', '', 'No: the cutter has A = 100%, the best in the plant.', 'No: every stage makes the same 6 variants.'];
+    if (i === 1){ m.pts.mc = m.mc.length === 1 ? 10 : m.mc.length === 2 ? 5 : 0; m.msg.mc = `<b class="ok">Exactly.</b> 3,600 pipes × 10 s = 600 min of its 630 family-B minutes: 95% busy. A short set-up does not help when there is almost no time left to do it in. Flexibility depends on load as much as on C/O.`; }
+    else m.msg.mc = `<b class="no">${why[i]}</b>`; render(); });
+  if (m.step === 4) app.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { m.view = +b.dataset.view; render(); });
+}
+
+/* ---------------------------------------------------------------- lab */
+function renderLab(){
+  const L = S.lab, base = L.key === 'A' ? CASE_A : CASE_B;
+  if (!L.st) L.st = base.stages.map(s => ({ ...s }));
+  app.innerHTML = header('What-if lab') + `<div class="stack">
+    <div class="btns" style="justify-content:space-between;align-items:center"><button class="btn small" id="home">← Missions</button>
+      <div class="btns"><select id="case" aria-label="Case"><option value="A" ${L.key === 'A' ? 'selected' : ''}>${CASE_A.label}</option><option value="B" ${L.key === 'B' ? 'selected' : ''}>${CASE_B.label}</option></select>
+      <button class="btn small" id="rst">Reset to exercise data</button></div></div>
+    <div class="grid2"><section class="panel stack">
+      <label class="sl"><span class="row"><span>Target: make every variant every … days</span><b class="num" id="tgv"></b></span><input type="range" id="tg" min="0.5" max="6" step="0.25" value="${L.target}"></label>
+      <div id="labout" class="stack"></div>${LEGEND}
+    </section><section class="labgrid">${L.st.map((s, i) => `<div class="panel stack" style="gap:8px"><h3>${s.name}</h3>
+      <label class="sl"><span class="row"><span>C/O</span><b class="num" data-v="co-${i}"></b></span><input type="range" data-k="co" data-i="${i}" min="0" max="${Math.max(30, base.stages[i].co * 1.5)}" step="${base.stages[i].co > 20 ? 1 : 0.1}" value="${s.co}"></label>
+      <label class="sl"><span class="row"><span>Availability</span><b class="num" data-v="a-${i}"></b></span><input type="range" data-k="a" data-i="${i}" min="0.6" max="1" step="0.01" value="${s.a}"></label>
+      ${L.key === 'B' ? `<label class="sl"><span class="row"><span>Share for this family</span><b class="num" data-v="share-${i}"></b></span><input type="range" data-k="share" data-i="${i}" min="0.3" max="1" step="0.05" value="${s.share}"></label>` : ''}
+      <span class="muted num" style="font-size:.78rem" data-info="${i}"></span></div>`).join('')}</section></div></div>`;
+  const $ = id => document.getElementById(id);
+  $('home').onclick = () => { S.screen = 'home'; render(); };
+  $('case').onchange = e => { S.lab = { key:e.target.value, target:1, st:null }; render(); };
+  $('rst').onclick = () => { S.lab = { key:L.key, target:1, st:null }; render(); };
+  $('tg').oninput = e => { L.target = +e.target.value; updateLab(); };
+  app.querySelectorAll('input[data-k]').forEach(inp => inp.oninput = () => { L.st[+inp.dataset.i][inp.dataset.k] = +inp.value; updateLab(); });
+  updateLab();
+}
+function updateLab(){
+  const L = S.lab, base = L.key === 'A' ? CASE_A : CASE_B;
+  const ms = L.st.map(s => metrics(s, base.D, base.n, L.target));
+  const worst = ms.reduce((w, m, i) => (m.epe > ms[w].epe ? i : w), 0);
+  const comp = ms[worst].epe;
+  document.getElementById('tgv').textContent = f2(L.target);
+  L.st.forEach((s, i) => {
+    const set = (k, t) => { const el = app.querySelector(`[data-v="${k}-${i}"]`); if (el) el.textContent = t; };
+    set('co', f1(s.co) + ' min'); set('a', pct(s.a)); set('share', pct(s.share));
+    app.querySelector(`[data-info="${i}"]`).textContent = ms[i].free > 0
+      ? `left for set-ups ${f1(ms[i].free)} min · max C/O for the target ${f2(ms[i].free * L.target / base.n)} min`
+      : 'production alone does not fit in the available time';
+  });
+  document.getElementById('labout').innerHTML =
+    barsHTML(L.st.map((s, i) => ({ st:s, m:ms[i], note: ms[i].free <= 0 ? '<b class="no">not capable: production does not fit</b>'
+      : s.co ? `EPE ${epeTxt(ms[i])}${ms[i].overflow > 0 ? ` · <b class="no">${f0(ms[i].overflow)} min short</b>` : ' · <b class="ok">fits</b>'}` : 'no set-up' })))
+    + `<div class="msg ${isFinite(comp) && comp <= L.target + 1e-9 ? 'ok' : 'no'}">Company EPE: <b>${comp === 0 ? '1 day' : isFinite(comp) ? f2(comp) + ' days (' + Math.ceil(comp - 1e-6) + ' whole days)' : 'not capable'}</b>${comp ? ', set by ' + L.st[worst].name : ''}.</div>`;
+}
+
+/* ---------------------------------------------------------------- router */
+function render(){
+  if (S.screen === 'm1') renderM1();
+  else if (S.screen === 'm2') renderM2();
+  else if (S.screen === 'lab') renderLab();
+  else renderHome();
+}
+render();
+</script>
+</body>
+</html>
