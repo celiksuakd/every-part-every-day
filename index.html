@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Every Part Every Day – EPE & SMED game</title>
-<meta name="description" content="Browser game for lean value stream mapping: how flexible is each stage (EPE), which stage limits the plant, and how SMED gets you to every part every day.">
+<title>Value Stream Game – Exercise 2: current state map & EPE</title>
+<meta name="description" content="Browser game for lean value stream mapping, exercise 2: finish the current state map of family B (takt time, inventory days, timeline, icons) and find the EPE of every stage and of the plant.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -130,6 +130,33 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 select{font:500 .9rem var(--f-body);padding:7px 10px;border-radius:5px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink)}
 .labgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .labgrid .panel{padding:12px 14px}
+/* current state map (SVG) */
+.mapwrap{overflow-x:auto;padding:10px 12px}
+.vsm{display:block;width:100%;min-width:760px;height:auto}
+.vsm .mt{font:9.5px var(--f-body);fill:var(--ink)}
+.vsm .mt.b{font-weight:600} .vsm .mt.s{font-size:8.5px} .vsm .mt.xs{font-size:7px;fill:var(--muted)} .vsm .mt.i{font-style:italic}
+.vsm .halo{paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
+.vsm .mbox{fill:var(--card);stroke:var(--ink);stroke-width:1.2}
+.vsm .mfill{fill:var(--ink)}
+.vsm .ml{fill:none;stroke:var(--ink);stroke-width:1.1}
+.vsm .mthin{stroke:var(--ink);stroke-width:.5}
+.vsm .mship{fill:none;stroke:var(--ink);stroke-width:7;stroke-linejoin:round}
+.vsm .mship2{fill:none;stroke:var(--card);stroke-width:4.2;stroke-linejoin:round}
+.vsm .mstair{fill:none;stroke:var(--ink);stroke-width:1.4}
+.vsm .hit{fill:transparent;stroke:none}
+.vsm .hit.pass{pointer-events:none}
+.vsm .hot.clk{cursor:pointer}
+.vsm .hot.clk:hover .hit{stroke:var(--setup);stroke-width:1.5;stroke-dasharray:3 3}
+.vsm .hot.sel .hit{stroke:var(--setup);stroke-width:2.5;stroke-dasharray:6 3}
+.vsm .hot.ok .hit{stroke:var(--good);stroke-width:2}
+.vsm .hot.no .hit{stroke:var(--bad);stroke-width:2.5}
+.vsm .hot:focus{outline:none} .vsm .hot:focus-visible .hit{stroke:var(--setup);stroke-width:3}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{text-align:left;font:500 .8rem var(--f-body);padding:7px 10px;border-radius:6px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.chip small{display:block;color:var(--muted);font-size:.72rem;font-weight:400}
+.chip:hover,.chip.on{border-color:var(--ink)} .chip.ed{border-left:4px solid var(--setup)}
+.mc button.on{border-color:var(--ink)}
+.debrief p+p{margin-top:2px}
 footer{margin-top:40px;font-size:.78rem;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
 </style>
@@ -185,9 +212,321 @@ const epeTxt = m => m.epe === 0 ? '1 day (no set-ups)' : (isFinite(m.epe) ? f2(m
 const near = (x, v, tol) => Math.abs(x - v) <= tol;
 const parse = s => { const v = parseFloat(String(s).replace(',', '.')); return isNaN(v) ? null : v; };
 
+/* ---------------------------------------------------------------- question 1: current state map */
+// Elements of the intern's draft map. "intern" = what the draft shows, "ok" = the correct option.
+const MAPQ = [
+  { id:'sup', title:'Supplier deliveries', ask:'How often does the raw-material supplier deliver?',
+    opts:['Daily', 'Twice a week', 'Weekly', 'Monthly'], lab:[['Daily'], ['2× per week'], ['Weekly'], ['Monthly']], intern:0, ok:2,
+    why:'The supplier delivers weekly. That is why 13 days of foils and pipes sit in front of the press and the cutter.' },
+  { id:'ship', title:'Deliveries to customers', ask:'How often does Shipping deliver to customers?',
+    opts:['Once per day', 'Twice per day', 'Weekly'], lab:[['1× per day'], ['2× per day'], ['Weekly']], intern:0, ok:1,
+    why:'Products are delivered to customers twice per day.' },
+  { id:'ord', title:'Customer orders → Sales', ask:'What do customers send to Sales?',
+    opts:['Daily orders, delivery the next day', 'Daily orders, shipping date 15 days later', 'Weekly orders'],
+    lab:[['Daily orders', 'deliver next day'], ['Daily orders', 'ship in 15 days'], ['Weekly orders']], intern:1, ok:0,
+    why:'Family B customers order every day and expect delivery the following day. The 15-day lead time belongs to Exercise 1.' },
+  { id:'fc', title:'Customer forecast → Production Planning', ask:'What do customers send to Production Planning?',
+    opts:['A 30/60/90-day forecast', 'Kanban cards', 'A weekly schedule'], lab:[['Forecast 30/60/90 d'], ['Kanban'], ['Weekly schedule']], intern:0, ok:0,
+    why:'Customers send a 30/60/90-day forecast to Production Planning.' },
+  { id:'po', title:'Production Planning → Supplier', ask:'What does Production Planning send to the supplier?',
+    opts:['30/60-day forecast + weekly order confirmation', 'Daily kanban orders', 'One monthly order'],
+    lab:[['Forecast 30/60 d', 'weekly order confirmation'], ['Daily kanban orders', ''], ['Monthly order', '']], intern:0, ok:0,
+    why:'PP sends a 30/60-day forecast and confirms orders weekly.' },
+  { id:'plan', title:'Production Planning → processes', ask:'How are the five processes scheduled?',
+    opts:['A weekly production plan to every process', 'A daily schedule to the last process only', 'Production kanban from the next process'],
+    lab:[['Weekly production plan'], ['Daily schedule, last process'], ['Production kanban']], intern:0, ok:0,
+    why:'PP tracks the orders and pushes a weekly production plan to each process: a push system.' },
+  { id:'disp', title:'Production Planning → Shipping', ask:'What does Shipping receive?',
+    opts:['A daily dispatch plan', 'The weekly production plan', 'Nothing'], lab:[['Daily dispatch plan'], ['Weekly plan'], ['–']], intern:0, ok:0,
+    why:'Shipping works to a daily dispatch plan from PP.' },
+  { id:'flow', title:'Material flow between stages', ask:'Which icon links the stages today?',
+    opts:['Push arrows', 'FIFO lanes', 'Supermarkets with kanban'], intern:1, ok:0,
+    why:'Each process works to its own weekly plan and pushes parts into the next stock: push arrows. FIFO lanes and supermarkets are future-state tools.' },
+  { id:'pshare', title:'Press data box: time for family B', ask:'How much of the press time goes to family B?',
+    opts:['100% (dedicated)', '60% of its time', '70% of its time'], lab:[['100% for fam. B'], ['60% for fam. B'], ['70% for fam. B']], intern:0, ok:1,
+    why:'The press is shared with other families and works for family B only 60% of its time.' },
+  { id:'cct', title:'Cutter data box: cycle time', ask:'What cycle time belongs in the cutter data box?',
+    opts:['C/T = 10 s per product', 'C/T = 10 s per pipe, 2 pipes per product', 'C/T = 5 s per pipe'],
+    lab:[['C/T = 10 s/product'], ['C/T = 10 s/pipe ×2'], ['C/T = 5 s/pipe']], intern:0, ok:1,
+    why:'The cutter takes 10 s per component and each product needs two identical pipes: 20 s of cutter time per product.' },
+  { id:'dco', title:'Drilling data box: changeover', ask:'What changeover time does drilling have?',
+    opts:['C/O = 100 min', 'C/O = 10 min', 'C/O = 0 min'], lab:[['C/O = 100 min'], ['C/O = 10 min'], ['C/O = 0 min']], intern:0, ok:0,
+    why:'Drilling has a 100-minute changeover. It matters again in question 2.' },
+];
+const MQ = Object.fromEntries(MAPQ.map(e => [e.id, e]));
+const MAPERR = MAPQ.filter(e => e.intern !== e.ok).length;
+const INV = [   // inventories whose days the player computes
+  { k:'press', name:'After the press', qty:20000, unit:'foils', per:1800, ok:20000 / 1800,
+    slips:[[20000 / 300, 'Divide by the total daily demand (1,800), not by the demand of one variant.']] },
+  { k:'cutter', name:'After the cutter', qty:21600, unit:'pipes', per:3600, ok:6,
+    slips:[[12, 'Each product needs two pipes, so the plant uses 3,600 pipes a day, not 1,800.'], [72, 'Divide by the pipes used per day by the whole family (3,600).']] },
+  { k:'weld', name:'After welding', qty:4000, unit:'pcs', per:1800, ok:4000 / 1800, slips:[[4000 / 300, 'Divide by 1,800 pcs/day, the demand of the whole family.']] },
+  { k:'drill', name:'After drilling', qty:5000, unit:'pcs', per:1800, ok:5000 / 1800, slips:[[5000 / 300, 'Divide by 1,800 pcs/day, the demand of the whole family.']] },
+  { k:'fg', name:'Finished goods', qty:30000, unit:'pcs', per:1800, ok:30000 / 1800, slips:[[100, 'Divide by 1,800 pcs/day, the demand of the whole family.']] },
+];
+const LT_OK = 13 + 20000 / 1800 + 4000 / 1800 + 5000 / 1800 + 30000 / 1800;   // 45.78 d along the press branch
+const VA_OPTS = [
+  ['65 s', true, 'Max(press 4 s, cutter 2 × 10 s) + welding 10 + drilling 12 + finishing 23 = 65 s. Parallel stages count once, with the longer time per product.'],
+  ['69 s', false, 'That adds both parallel branches. Press and cutter work at the same time, so only the longer of the two counts.'],
+  ['49 s', false, 'That follows the press only. The cutter spends 2 × 10 s on every product, longer than the press.'],
+  ['55 s', false, 'Close, but the cutter needs two pipes per product: 2 × 10 s = 20 s, not 10 s.'],
+];
+const MAXQ1 = 10 + 6 * INV.length + 10 + 5 + 5 * MAPERR;
+
+function q1Fresh(){ return { step:1, pts:{}, tries:{}, msg:{}, ok:{}, va:[], sel:null, submitted:false,
+  ch:Object.fromEntries(MAPQ.map(e => [e.id, e.intern])) }; }
+
+/* --- SVG drawing helpers (map coordinates: 1000 × 610) */
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const tx = (x, y, s, cls = 'mt', anchor = 'middle') => `<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${esc(s)}</text>`;
+const tl = (x, y, lines, cls = 'mt', anchor = 'middle', dy = 11) => `<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${lines.filter(l => l !== '').map((l, i) => `<tspan x="${x}" dy="${i ? dy : 0}">${esc(l)}</tspan>`).join('')}</text>`;
+function zig(pts){   // polyline with an "electronic" lightning in the longest segment
+  let best = 0, bl = 0;
+  for (let i = 0; i < pts.length - 1; i++){ const l = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); if (l > bl){ bl = l; best = i; } }
+  const [a, b] = [pts[best], pts[best + 1]], ux = (b[0] - a[0]) / bl, uy = (b[1] - a[1]) / bl, nx = -uy, ny = ux, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+  const k = [[mx - 8 * ux, my - 8 * uy], [mx + 2 * ux + 7 * nx, my + 2 * uy + 7 * ny], [mx - 2 * ux - 7 * nx, my - 2 * uy - 7 * ny], [mx + 8 * ux, my + 8 * uy]];
+  return [...pts.slice(0, best + 1), ...k, ...pts.slice(best + 1)];
+}
+const pl = (pts, cls = 'ml', head = true) => `<polyline points="${pts.map(p => p.join(',')).join(' ')}" class="${cls}" ${head ? 'marker-end="url(#ah)"' : ''}/>`;
+function factory(x, y, label){
+  return `<path class="mbox" d="M${x},${y + 70} V${y + 22} L${x + 22},${y} V${y + 22} L${x + 44},${y} V${y + 22} L${x + 66},${y} V${y + 22} L${x + 88},${y} V${y + 70} Z"/>${tx(x + 44, y + 55, label, 'mt b')}`;
+}
+function truck(x, y){
+  return `<rect class="mbox" x="${x}" y="${y}" width="50" height="30"/><rect class="mbox" x="${x + 50}" y="${y + 10}" width="18" height="20"/><circle class="mfill" cx="${x + 12}" cy="${y + 33}" r="5"/><circle class="mfill" cx="${x + 56}" cy="${y + 33}" r="5"/>`;
+}
+function tri(cx, cy, lines){
+  return `<path class="mbox" d="M${cx},${cy - 18} L${cx + 18},${cy + 16} L${cx - 18},${cy + 16} Z"/>${tx(cx, cy + 12, 'I', 'mt b')}${tl(cx, cy + 30, lines, 'mt s')}`;
+}
+function procBox(x, y, name, lines){
+  return `<rect class="mbox" x="${x}" y="${y}" width="92" height="40"/>${tx(x + 46, y + 24, name, 'mt b')}
+    <rect class="mbox" x="${x}" y="${y + 40}" width="92" height="58"/>${lines.map((l, i) => (i ? `<line class="mthin" x1="${x}" x2="${x + 92}" y1="${y + 40 + i * 14.5}" y2="${y + 40 + i * 14.5}"/>` : '') + tx(x + 4, y + 51 + i * 14.5, l, 'mt s', 'start')).join('')}`;
+}
+function flowArrow(style, x1, y1, x2, y2){   // drawn horizontally, rotated into place
+  const L = Math.hypot(x2 - x1, y2 - y1), ang = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+  let g;
+  if (style === 0) g = `<path class="mbox" d="M0,-4 H${L - 9} V-7 L${L},0 L${L - 9},7 V4 H0 Z"/>${L > 20 ? `<rect class="mfill" x="2" y="-4" width="2.5" height="8"/><rect class="mfill" x="7" y="-4" width="2.5" height="8"/>` : ''}`;
+  else if (style === 1) g = `<line class="ml" x1="0" x2="${L}" y1="-6" y2="-6"/><line class="ml" x1="0" x2="${L}" y1="6" y2="6"/>${tx(L / 2 - 2, 3, 'FIFO', 'mt xs')}<line class="ml" x1="${L - 10}" x2="${L}" y1="0" y2="0" marker-end="url(#ah)"/>`;
+  else g = `<path class="ml" d="M${L - 4},-10 H4 V10 H${L - 4} M4,-3 H${L - 4} M4,4 H${L - 4}" fill="none"/>`;
+  return `<g transform="translate(${x1},${y1}) rotate(${ang})">${g}</g>`;
+}
+function shipArrow(pts){
+  const [a, b] = pts.slice(-2), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const hx = b[0], hy = b[1], s = 9, p = (t, o) => [hx - Math.cos(ang) * t - Math.sin(ang) * o, hy - Math.sin(ang) * t + Math.cos(ang) * o];
+  const short = [...pts.slice(0, -1), p(s, 0)];
+  return `${pl(short, 'mship', false)}${pl(short, 'mship2', false)}<polygon class="mbox" points="${[p(s, -9), [hx, hy], p(s, 9)].map(q => q.join(',')).join(' ')}"/>`;
+}
+
+// o: { ch, q1 (for numbers), sel, click, marks }
+function mapSVG(o){
+  const ch = o.ch, q = o.q1, L = id => MQ[id].lab[ch[id]];
+  const hot = (id, x, y, w, h, inner, passive) => {
+    const mk = o.marks && id in o.marks ? (o.marks[id] ? ' ok' : ' no') : '';
+    return `<g class="hot${o.click ? ' clk' : ''}${o.sel === id ? ' sel' : ''}${mk}" data-e="${id}" ${o.click ? `tabindex="0" role="button" aria-label="${esc(MQ[id].title)}"` : ''}><rect class="hit${passive ? ' pass' : ''}" x="${x}" y="${y}" width="${w}" height="${h}" rx="4"/>${inner}</g>`;
+  };
+  const day = k => q.ok[k] ? f2(INV.find(i => i.k === k).ok) + ' d' : '? d';
+  const st = ch.flow;
+  const arrows = [[124, 276, 158, 276], [252, 276, 276, 276], [316, 276, 343, 276], [437, 276, 461, 276], [501, 276, 527, 276], [621, 276, 645, 276],
+    [685, 276, 711, 276], [805, 276, 829, 276], [869, 276, 893, 276], [124, 436, 158, 436], [252, 436, 276, 436], [316, 436, 372, 436], [380, 444, 380, 352]];
+  const tt = q.ok.tt ? 'TT = 30 s' : 'TT = ? s';
+  const lt = q.ok.lt ? f2(LT_OK) + ' d' : '? d', va = q.ok.va ? '65 s' : '? s';
+  const tlUp = [['RM', '13 d', 70, 150], ['press out', day('press'), 250, 340], ['weld out', day('weld'), 435, 525], ['drill out', day('drill'), 620, 710], ['FG', day('fg'), 805, 880]];
+  const tlLow = [['press / cutter', q.ok.va ? '20 s' : '? s', 150, 250], ['welding', '10 s', 340, 435], ['drilling', '12 s', 525, 620], ['finishing', '23 s', 710, 805]];
+  return `<svg class="vsm" viewBox="0 0 1000 610" role="img" aria-label="Current state map of family B">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink)"/></marker></defs>
+  ${factory(30, 32, 'Supplier')}
+  <rect class="mbox" x="400" y="28" width="170" height="62"/><line class="mthin" x1="400" x2="570" y1="48" y2="48"/>${tx(485, 42, 'Production Planning', 'mt b')}${tx(485, 74, 'MRP', 'mt s')}
+  <rect class="mbox" x="640" y="28" width="110" height="62"/><line class="mthin" x1="640" x2="750" y1="48" y2="48"/>${tx(695, 42, 'Sales', 'mt b')}${tx(695, 74, 'order entry', 'mt s')}
+  ${factory(880, 32, 'Customers')}
+  <rect class="mbox" x="870" y="106" width="120" height="56"/>${tl(876, 120, ['D = 1,800 pcs/day', '6 variants × 300', tt], 'mt s', 'start', 15)}
+  ${pl(zig([[638, 58], [572, 58]]))}${tx(605, 80, 'orders', 'mt s i')}
+  ${hot('ord', 755, 40, 120, 58, pl(zig([[878, 58], [752, 58]])) + tl(815, 78, L('ord'), 'mt s i'))}
+  ${hot('fc', 480, 0, 450, 32, pl(zig([[922, 32], [922, 12], [485, 12], [485, 26]])) + tx(610, 25, L('fc')[0], 'mt s i'))}
+  ${hot('po', 125, 38, 270, 48, pl(zig([[398, 58], [122, 58]])) + tl(260, 50, [L('po')[0]], 'mt s i') + (L('po')[1] ? tx(260, 78, L('po')[1], 'mt s i') : ''))}
+  ${hot('plan', 185, 135, 190, 26, pl([[430, 90], [205, 248]]) + pl([[455, 90], [390, 248]]) + pl([[505, 90], [574, 248]]) + pl([[525, 90], [758, 248]]) + pl([[412, 90], [142, 232], [142, 418], [158, 418]]) + tx(280, 152, L('plan')[0], 'mt s i halo'))}
+  ${hot('disp', 700, 150, 130, 26, pl([[555, 90], [925, 248]]) + tx(765, 167, L('disp')[0], 'mt s i halo'))}
+  ${hot('sup', 24, 126, 84, 76, truck(30, 135) + tx(64, 194, L('sup')[0], 'mt s b'))}
+  ${shipArrow([[100, 200], [100, 262]])}${shipArrow([[40, 202], [40, 442], [88, 442]])}
+  ${tri(100, 282, ['23,400 foils', '13 d'])}${tri(100, 442, ['46,800 pipes', '13 d'])}
+  ${procBox(160, 250, 'Press', ['C/T = 4 s', 'C/O = 120 min', 'A = 80%', ''])}
+  ${hot('pshare', 160, 333, 92, 15, tx(164, 344, L('pshare')[0], 'mt s', 'start'))}
+  ${procBox(160, 410, 'Cutter', ['', 'C/O = 15 min', 'A = 100%', '70% for fam. B'])}
+  ${hot('cct', 160, 450, 92, 15, tx(164, 461, L('cct')[0], 'mt s', 'start'))}
+  ${tri(296, 282, ['20,000 foils', day('press')])}${tri(296, 442, ['21,600 pipes', day('cutter')])}
+  ${procBox(345, 250, 'Welding', ['C/T = 10 s', 'C/O = 0', 'A = 100%', 'dedicated'])}
+  ${tri(481, 282, ['4,000 pcs', day('weld')])}
+  ${procBox(529, 250, 'Drilling', ['C/T = 12 s', '', 'A = 95%', 'dedicated'])}
+  ${hot('dco', 529, 304, 92, 15, tx(533, 315, L('dco')[0], 'mt s', 'start'))}
+  ${tri(665, 282, ['5,000 pcs', day('drill')])}
+  ${procBox(713, 250, 'Finishing', ['C/T = 23 s', 'C/O = 0', 'A = 100%', 'dedicated'])}
+  ${tri(849, 282, ['30,000 pcs', day('fg')])}
+  <rect class="mbox" x="895" y="250" width="72" height="40"/>${tx(931, 274, 'Shipping', 'mt b')}
+  ${hot('ship', 905, 300, 90, 68, truck(912, 308) + tx(946, 362, L('ship')[0], 'mt s b'))}
+  ${shipArrow([[978, 302], [978, 168]])}
+  ${hot('flow', 120, 258, 780, 196, arrows.map(a => flowArrow(st, ...a)).join(''), true)}
+  <path class="mstair" d="M70,556 H150 V582 H250 V556 H340 V582 H435 V556 H525 V582 H620 V556 H710 V582 H805 V556 H880"/>
+  ${tx(30, 572, 'TIMELINE', 'mt xs b')}
+  ${tlUp.map(([n, v, a, b]) => tx((a + b) / 2, 551, v, 'mt s b') + tx((a + b) / 2, 538, n, 'mt xs')).join('')}
+  ${tlLow.map(([n, v, a, b]) => tx((a + b) / 2, 577, v, 'mt s b') + tx((a + b) / 2, 596, n, 'mt xs')).join('')}
+  ${tx(990, 551, 'Lead time ' + lt, 'mt s b', 'end')}${tx(990, 577, 'VA time ' + va, 'mt s b', 'end')}
+  </svg>`;
+}
+
+function renderQ1(){
+  const m = S.q1;
+  const labels = ['Takt time', 'Inventory days', 'Timeline', 'Check the map', 'Your map'];
+  let body = '';
+  const mapPanel = (o = {}) => `<div class="panel mapwrap">${mapSVG({ ch:m.ch, q1:m, ...o })}</div>`;
+
+  if (m.step === 1){
+    body = `<div class="stack">
+      <p>Your intern started the <b>current state map of family B</b>. The icons are there, but the numbers are missing and some details are wrong. Finish it question by question.</p>
+      ${mapPanel()}
+      <div class="grid2"><section class="stack"><h2>Start with the customer: takt time</h2>
+        <div class="params"><div><small>Demand D</small><b>1,800</b><small>pcs/day</small></div><div><small>Shifts</small><b>2 × 8 h</b><small>30 min break each</small></div><div><small>Variants</small><b>6</b><small>sold every day</small></div></div>
+      </section><section class="panel stack">
+        <h3>Takt time (seconds per piece)</h3>
+        <div class="ask"><input id="tt" inputmode="decimal" placeholder="s/pc" class="${m.ok.tt ? 'ok' : ''}" ${m.ok.tt ? 'disabled value="30"' : ''}><button class="btn small" id="ctt" ${m.ok.tt ? 'disabled' : ''}>Check</button></div>
+        ${m.msg.tt ? `<div class="msg ${m.ok.tt ? 'ok' : 'no'}">${m.msg.tt}</div>` : ''}
+        ${m.ok.tt ? '<div class="btns"><button class="btn primary" id="next">Inventory days →</button></div>' : ''}
+      </section></div></div>`;
+  }
+
+  if (m.step === 2){
+    const all = INV.every(i => m.ok[i.k]);
+    body = `<div class="stack">${mapPanel()}
+      <div class="grid2"><section class="stack"><h2>Days of inventory</h2>
+        <p>Each triangle shows a quantity. On the map, write it as <b>days of demand</b>: stock ÷ what the plant uses in a day. Raw material is already given as 13 days.</p>
+        <div class="formula">days = quantity ÷ daily consumption<br>pieces: 1,800 per day · pipes: 2 × 1,800 = 3,600 per day</div>
+      </section><section class="panel stack">
+        ${INV.map(i => `<div class="stack" style="gap:6px;padding-bottom:10px;border-bottom:1px solid var(--line)">
+          <h3>${i.name} <span class="muted num" style="font-weight:400;font-size:.85rem">${f0(i.qty)} ${i.unit}</span></h3>
+          <div class="ask"><input data-inv="${i.k}" inputmode="decimal" placeholder="days" class="${m.ok[i.k] ? 'ok' : ''}" ${m.ok[i.k] ? `disabled value="${f2(i.ok)}"` : ''}><button class="btn small" data-cinv="${i.k}" ${m.ok[i.k] ? 'disabled' : ''}>Check</button></div>
+          ${m.msg[i.k] ? `<div class="msg ${m.ok[i.k] ? 'ok' : 'no'}">${m.msg[i.k]}</div>` : ''}</div>`).join('')}
+        ${all ? '<div class="btns"><button class="btn primary" id="next">Timeline →</button></div>' : ''}
+      </section></div></div>`;
+  }
+
+  if (m.step === 3){
+    const vaDone = !!m.ok.va;
+    body = `<div class="stack">${mapPanel()}
+      <div class="grid2"><section class="stack"><h2>The timeline</h2>
+        <p>The top of the staircase adds the waiting time in stock. The bottom adds the processing time of one piece. Press and cutter work <b>in parallel</b>, so only one branch counts.</p>
+        <div class="tbl"><table><thead><tr><th>Branch</th><th>RM</th><th>Stock after</th><th>Total</th></tr></thead><tbody>
+          <tr><td>Press (foils)</td><td>13 d</td><td>11.11 d</td><td>24.11 d</td></tr><tr><td>Cutter (pipes)</td><td>13 d</td><td>6.00 d</td><td>19.00 d</td></tr></tbody></table></div>
+        <p class="muted" style="font-size:.85rem">After the welding everything is in one line: 2.22 + 2.78 + 16.67 days.</p>
+      </section><section class="panel stack">
+        <h3>a) Production lead time (days)</h3>
+        <div class="ask"><input id="lt" inputmode="decimal" placeholder="days" class="${m.ok.lt ? 'ok' : ''}" ${m.ok.lt ? `disabled value="${f2(LT_OK)}"` : ''}><button class="btn small" id="clt" ${m.ok.lt ? 'disabled' : ''}>Check</button></div>
+        ${m.msg.lt ? `<div class="msg ${m.ok.lt ? 'ok' : 'no'}">${m.msg.lt}</div>` : ''}
+        <h3>b) Value-added time per piece</h3>
+        <div class="mc">${VA_OPTS.map((v, i) => `<button data-va="${i}" class="${m.va.includes(i) ? (v[1] ? 'ok' : 'no') : ''}" ${vaDone ? 'disabled' : ''}>${v[0]}</button>`).join('')}</div>
+        ${m.msg.va ? `<div class="msg ${vaDone ? 'ok' : 'no'}">${m.msg.va}</div>` : ''}
+        ${m.ok.lt && vaDone ? '<div class="btns"><button class="btn primary" id="next">Check the intern\'s map →</button></div>' : ''}
+      </section></div></div>`;
+  }
+
+  if (m.step === 4){
+    const sel = m.sel ? MQ[m.sel] : null;
+    const changed = MAPQ.filter(e => m.ch[e.id] !== e.intern).length;
+    body = `<div class="stack">
+      <div class="msg info">The intern made <b>${MAPERR} mistakes</b> in the icons, flows and data boxes. Click any label, arrow or data-box line on the map, or pick an item from the list, and set what it should show. Changing a correct item costs points.</div>
+      ${mapPanel({ click:true, sel:m.sel })}
+      <div class="grid2"><section class="panel stack">
+        <h3>Map items</h3>
+        <div class="chips">${MAPQ.map(e => `<button class="chip ${m.sel === e.id ? 'on' : ''} ${m.ch[e.id] !== e.intern ? 'ed' : ''}" data-sel="${e.id}">${e.title}<small>${e.opts[m.ch[e.id]]}</small></button>`).join('')}</div>
+      </section><section class="panel stack">
+        ${sel ? `<span class="eyebrow">${sel.title}</span><h3>${sel.ask}</h3>
+          <div class="mc">${sel.opts.map((t, i) => `<button data-opt="${i}" class="${m.ch[sel.id] === i ? 'on' : ''}">${m.ch[sel.id] === i ? '● ' : '○ '}${t}${i === sel.intern ? ' <span class="muted">(intern\'s draft)</span>' : ''}</button>`).join('')}</div>`
+          : '<p class="muted">Select an item on the map or in the list.</p>'}
+        <p class="muted num" style="font-size:.82rem">${changed} item${changed === 1 ? '' : 's'} changed so far</p>
+        <div class="btns"><button class="btn primary" id="submit">Hand in the map</button></div>
+      </section></div></div>`;
+  }
+
+  if (m.step === 5){
+    const marks = Object.fromEntries(MAPQ.map(e => [e.id, m.ch[e.id] === e.ok]));
+    const shown = Object.fromEntries(MAPQ.filter(e => e.intern !== e.ok || m.ch[e.id] !== e.ok).map(e => [e.id, marks[e.id]]));
+    const fixed = MAPQ.filter(e => e.intern !== e.ok && m.ch[e.id] === e.ok).length;
+    const broke = MAPQ.filter(e => e.intern === e.ok && m.ch[e.id] !== e.ok).length;
+    const pts = sum(m.pts);
+    body = `<div class="stack">
+      <div class="grid2"><section class="stack"><h2>Your map · ${fixed} of ${MAPERR} mistakes fixed${broke ? `, ${broke} correct item${broke > 1 ? 's' : ''} changed` : ''}</h2>
+        <p class="muted">Outlined: the intern's mistakes (green = fixed, red = still wrong) and any correct item you changed (red).</p></section>
+        <section class="stack" style="align-items:flex-end"><span class="score">Question 1: ${pts} / ${MAXQ1}</span></section></div>
+      ${mapPanel({ marks:shown })}
+      <div class="grid2"><section class="panel stack"><h3>Item by item</h3>
+        <div class="tbl"><table><thead><tr><th>Item</th><th style="text-align:left">Correct</th><th></th></tr></thead><tbody>
+        ${MAPQ.map(e => `<tr><td>${e.title}</td><td style="text-align:left">${e.opts[e.ok]}</td><td class="${marks[e.id] ? 'ok' : 'hl'}">${marks[e.id] ? '✓' : '✗'}</td></tr>`).join('')}</tbody></table></div>
+        <div class="btns"><button class="btn small" id="showok">${m.showOk ? 'Show my map' : 'Show the corrected map'}</button></div>
+      </section><section class="panel stack debrief"><h3>What the current state map tells you</h3>
+        ${MAPQ.filter(e => !marks[e.id] || e.intern !== e.ok).map(e => `<p><b>${e.title}.</b> ${e.why}</p>`).join('')}
+        <div class="formula">Takt time = 54,000 s ÷ 1,800 = 30 s<br>Lead time (press branch) = 13 + 11.11 + 2.22 + 2.78 + 16.67 = 45.78 days<br>Value-added time = 20 + 10 + 12 + 23 = 65 s → VA is ≈ 0.003% of the lead time</div>
+        <p>A push system with weekly plans everywhere, and stocks of several days between every pair of stages. Question 2 asks how flexible each stage really is.</p>
+        <div class="btns"><button class="btn primary" data-go="m2">Question 2 →</button><button class="btn" data-go="home">Back to missions</button></div>
+      </section></div></div>`;
+    if (m.showOk) body = body.replace(mapPanel({ marks:shown }), mapPanel({ ch:Object.fromEntries(MAPQ.map(e => [e.id, e.ok])) }));
+  }
+
+  app.innerHTML = header('Question 1 · Current state map, family B') + `<div class="stack">
+    <div class="btns" style="justify-content:space-between"><button class="btn small" id="home">← Missions</button>${steps(labels, m.step)}</div>${body}</div>`;
+  wireQ1();
+}
+
+function wireQ1(){
+  const m = S.q1, $ = id => document.getElementById(id);
+  $('home').onclick = () => { S.screen = 'home'; render(); };
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; render(); });
+  const next = $('next'); if (next) next.onclick = () => { m.step++; render(); };
+  const enter = (el, fn) => { if (el && !el.disabled) el.onkeydown = e => { if (e.key === 'Enter') fn(); }; };
+  if (m.step === 1){
+    const chk = () => { const v = parse($('tt').value); if (v === null) return; m.tries.tt = (m.tries.tt || 0) + 1;
+      if (near(v, 30, 0.05)){ m.ok.tt = true; m.pts.tt = m.tries.tt === 1 ? 10 : 5; m.msg.tt = '<b class="ok">Correct: 30 s.</b> 2 × (480 − 30) min × 60 = 54,000 s a day ÷ 1,800 pcs. The customer takes one piece every 30 seconds.'; }
+      else if (near(v, 32, 0.05)) m.msg.tt = '<b class="no">Close.</b> You used 16 hours. Take the two 30-minute breaks out first.';
+      else if (near(v, 15, 0.05) || near(v, 16, 0.05)) m.msg.tt = '<b class="no">That is one shift.</b> The plant works two shifts a day.';
+      else if (near(v, 0.5, 0.01)) m.msg.tt = '<b class="no">That is in minutes.</b> Give the answer in seconds.';
+      else m.msg.tt = '<b class="no">Not yet.</b> Takt time = available time per day ÷ daily demand.';
+      render(); };
+    if ($('ctt')) $('ctt').onclick = chk; enter($('tt'), chk); if ($('tt') && !$('tt').disabled) $('tt').focus({ preventScroll:true });
+  }
+  if (m.step === 2){
+    const chk = k => { const i = INV.find(x => x.k === k), v = parse(app.querySelector(`[data-inv="${k}"]`).value); if (v === null) return;
+      m.tries[k] = (m.tries[k] || 0) + 1;
+      if (near(v, i.ok, 0.05)){ m.ok[k] = true; m.pts[k] = m.tries[k] === 1 ? 6 : 3; m.msg[k] = `<b class="ok">Correct:</b> ${f0(i.qty)} ÷ ${f0(i.per)} = ${f2(i.ok)} days.`; }
+      else { const s = i.slips.find(x => near(v, x[0], 0.05)); m.msg[k] = `<b class="no">Not yet.</b> ${s ? s[1] : `Divide ${f0(i.qty)} ${i.unit} by the ${i.unit} used per day.`}`; }
+      render(); const n = app.querySelector('[data-inv]:not([disabled])'); if (n) n.focus({ preventScroll:true }); };
+    app.querySelectorAll('[data-cinv]').forEach(b => b.onclick = () => chk(b.dataset.cinv));
+    app.querySelectorAll('[data-inv]').forEach(inp => enter(inp, () => chk(inp.dataset.inv)));
+    const first = app.querySelector('[data-inv]:not([disabled])'); if (first) first.focus({ preventScroll:true });
+  }
+  if (m.step === 3){
+    const chk = () => { const v = parse($('lt').value); if (v === null) return; m.tries.lt = (m.tries.lt || 0) + 1;
+      if (near(v, LT_OK, 0.06) || v === 46){ m.ok.lt = true; m.pts.lt = m.tries.lt === 1 ? 10 : 5; m.msg.lt = `<b class="ok">Correct: ${f2(LT_OK)} days</b> along the press branch (24.11 d beats the cutter's 19.00 d), then 2.22 + 2.78 + 16.67.`; }
+      else if (near(v, 64.78, 0.1)) m.msg.lt = '<b class="no">You added both branches.</b> Foils and pipes wait at the same time, so only the longer branch counts.';
+      else if (near(v, 40.67, 0.1)) m.msg.lt = '<b class="no">That is the cutter branch.</b> Take the longer of the two branches.';
+      else if (near(v, 32.78, 0.1)) m.msg.lt = '<b class="no">Raw material is missing.</b> The 13 days in front of the press are part of the lead time.';
+      else m.msg.lt = '<b class="no">Not yet.</b> Longest branch (RM + stock after it) + the three stocks after welding.';
+      render(); };
+    if ($('clt')) $('clt').onclick = chk; enter($('lt'), chk); if ($('lt') && !$('lt').disabled) $('lt').focus({ preventScroll:true });
+    app.querySelectorAll('[data-va]').forEach(b => b.onclick = () => { const i = +b.dataset.va; if (m.va.includes(i)) return; m.va.push(i);
+      if (VA_OPTS[i][1]){ m.ok.va = true; m.pts.va = m.va.length === 1 ? 5 : m.va.length === 2 ? 2 : 0; m.msg.va = `<b class="ok">Correct.</b> ${VA_OPTS[i][2]}`; }
+      else m.msg.va = `<b class="no">${VA_OPTS[i][0]}:</b> ${VA_OPTS[i][2]}`; render(); });
+  }
+  if (m.step === 4){
+    const pick = id => { m.sel = id; render(); };
+    app.querySelectorAll('.hot.clk').forEach(g => { g.onclick = () => pick(g.dataset.e); g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pick(g.dataset.e); } }; });
+    app.querySelectorAll('[data-sel]').forEach(b => b.onclick = () => pick(b.dataset.sel));
+    app.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { m.ch[m.sel] = +b.dataset.opt; render(); });
+    $('submit').onclick = () => {
+      let p = 0; MAPQ.forEach(e => { if (e.intern !== e.ok && m.ch[e.id] === e.ok) p += 5; if (e.intern === e.ok && m.ch[e.id] !== e.ok) p -= 3; });
+      m.pts.map = Math.max(0, p); m.submitted = true; m.step = 5; saveBest('q1', sum(m.pts)); render(); window.scrollTo(0, 0); };
+  }
+  if (m.step === 5){ const b = $('showok'); if (b) b.onclick = () => { m.showOk = !m.showOk; render(); }; }
+}
+
 /* ---------------------------------------------------------------- state */
 const fresh = () => ({
   screen:'home',
+  q1:q1Fresh(),
   m1:{ step:1, pts:{}, tries:{}, picked:[], hint:false, msg:{}, ext:{}, imp:{}, tpm:false, mistakes:0, smedMsg:'', ran:false },
   m2:{ step:1, pts:{}, tries:{}, hints:{}, msg:{}, solved:{}, picked:[], mc:[], epeOk:false, stageOk:false, view:1 },
   lab:{ key:'A', target:1, st:null },
@@ -197,15 +536,15 @@ let best = {};
 try { best = JSON.parse(localStorage.getItem('epe-game-best') || '{}'); } catch(e) { best = {}; }
 const saveBest = (k, v) => { best[k] = Math.max(best[k] || 0, v); try { localStorage.setItem('epe-game-best', JSON.stringify(best)); } catch(e) {} };
 const sum = o => Math.max(0, Object.values(o).reduce((a, b) => a + b, 0));
-const total = () => sum(S.m1.pts) + sum(S.m2.pts);
+const total = () => sum(S.q1.pts) + sum(S.m1.pts) + sum(S.m2.pts);
 const app = document.getElementById('app');
 
 /* ---------------------------------------------------------------- shared pieces */
 function header(sub){
-  return `<header class="top"><div class="stack" style="gap:4px"><span class="eyebrow">Operations management · Lean & value stream mapping</span>
-  <h1>Every Part Every Day</h1></div>
+  return `<header class="top"><div class="stack" style="gap:4px"><span class="eyebrow">Operations management · Lean & VSM · Exercise 2, questions 1–2</span>
+  <h1>Value Stream Game: Family B</h1></div>
   <div class="stack" style="gap:8px;align-items:flex-end"><p class="muted" style="max-width:40ch;text-align:right">${sub}</p>
-  <span class="score" title="Points this session">Score ${total()} / ${MAX1 + MAX2}</span></div></header>`;
+  <span class="score" title="Points this session">Score ${total()} / ${MAXQ1 + MAX2 + MAX1}</span></div></header>`;
 }
 function steps(labels, cur){
   return `<div class="steps">${labels.map((l, i) => `<span class="${i + 1 < cur ? 'done' : i + 1 === cur ? 'on' : ''}">${i + 1}. ${l}</span>`).join('')}</div>`;
@@ -250,29 +589,30 @@ function stageTable(c, extra){
 
 /* ---------------------------------------------------------------- home */
 function renderHome(){
-  app.innerHTML = header('How often can each stage make every variant? Find the stage that limits the plant, then fix it with SMED.') + `
+  const card = (eyebrow, title, text, go, st, key, max, primary = true) => `<div class="panel stack card"><span class="eyebrow">${eyebrow}</span><h3>${title}</h3>
+    <p class="meta">${text}</p><div class="btns"><button class="btn ${primary ? 'primary' : ''}" data-go="${go}">${st > 1 ? 'Continue' : 'Play'}</button>
+    <span class="muted num" style="align-self:center">best ${best[key] || 0} / ${max}</span></div></div>`;
+  app.innerHTML = header('Draw the current state map of family B, then find out how often each stage can make every variant.') + `
   <div class="grid2">
     <section class="stack">
-      <h2>The idea in one bar</h2>
-      <p>Every stage has the same day: 2 shifts × (8 h − 30 min break) = <b class="num">900 min</b>. Production and breakdowns use part of it. Whatever is left is the only time you have for <b>set-ups</b> (changing from one variant to the next).</p>
-      <div class="panel stack">${barsHTML([{ st:CASE_A.stages[0], m:metrics(CASE_A.stages[0], CASE_A.D, CASE_A.n, 1),
-        note:'Machining, if it had to make all 68 variants today: the set-ups do not fit.' }])}${LEGEND}</div>
-      <div class="formula">EPE (days) = n × C/O ÷ time left for set-ups<br>time left = T × share × A − D × units per product × C/T<br><span class="muted">EPE = "every part every …" days. The plant is only as flexible as its least flexible stage.</span></div>
+      <h2>Exercise 2 · family B</h2>
+      <p>Six high-volume variants (B1…B6), sold every day and delivered twice a day. Two 8-hour shifts with a 30-minute break. The press and the cutter work in parallel and are shared with other families. Welding joins one foil and two pipes, then drilling, finishing and shipping.</p>
+      <div class="params"><div><small>Demand D</small><b>1,800</b><small>pcs/day</small></div><div><small>Variants n</small><b>6</b><small>B1 … B6</small></div><div><small>Available time</small><b>900</b><small>min/day</small></div><div><small>Deliveries</small><b>2</b><small>per day</small></div></div>
+      ${stageTable(CASE_B, { h:'Stock after', f:s => `<td>${f0({ Press:20000, Cutter:21600, Welding:4000, Drilling:5000, Finishing:30000 }[s.name])}</td>` })}
+      <p class="muted" style="font-size:.85rem">Raw material: 13 days of foils in front of the press and 13 days of pipes in front of the cutter, delivered weekly.</p>
+      <div class="formula">Q1 · takt time = T ÷ D · days of stock = stock ÷ daily use<br>Q2 · EPE = n × C/O ÷ (T × share × A − D × units × C/T)</div>
     </section>
     <section class="stack">
-      <div class="panel stack card"><span class="eyebrow">Mission 1 · Exercise 1, question 2</span><h3>Every variant, every day</h3>
-        <p class="meta">Family A: 68 low-volume variants, 450 pcs/day, three dedicated stages. The general manager wants every stage to make every variant every day. Find what stops it, then run a SMED workshop on a budget.</p>
-        <div class="btns"><button class="btn primary" data-go="m1">${S.m1.step > 1 ? 'Continue' : 'Play'}</button><span class="muted num" style="align-self:center">best ${best.m1 || 0} / ${MAX1}</span></div></div>
-      <div class="panel stack card"><span class="eyebrow">Mission 2 · Exercise 2, question 2</span><h3>What EPE can the plant promise?</h3>
-        <p class="meta">Family B: 6 high-volume variants, 1,800 pcs/day. The press and the cutter are shared with other families, and every product needs two pipes. Work out each stage's EPE and the company's.</p>
-        <div class="btns"><button class="btn primary" data-go="m2">${S.m2.step > 1 ? 'Continue' : 'Play'}</button><span class="muted num" style="align-self:center">best ${best.m2 || 0} / ${MAX2}</span></div></div>
+      ${card('Question 1 · current state map', 'Finish the intern’s map', 'Add takt time, days of inventory and the timeline, then find and fix the six mistakes the intern made in the icons, flows and data boxes.', 'q1', S.q1.step, 'q1', MAXQ1)}
+      ${card('Question 2 · flexibility', 'What EPE can the plant promise?', 'Work out the EPE of each stage, with the shared press and cutter and two pipes per product, then the EPE of the whole plant.', 'm2', S.m2.step, 'm2', MAX2)}
+      ${card('Bonus · Exercise 1, question 2', 'Every variant, every day', 'Family A, 68 variants: find why the plant cannot make every variant every day and fix machining with a SMED workshop on a budget.', 'm1', S.m1.step, 'm1', MAX1, false)}
       <div class="panel stack card"><span class="eyebrow">Sandbox</span><h3>What-if lab</h3>
         <p class="meta">Move set-up times, availability and shares and watch every stage's day bar and EPE update.</p>
         <div class="btns"><button class="btn" data-go="lab">Open the lab</button>${total() ? '<button class="btn small" id="reset">Reset session</button>' : ''}</div></div>
     </section>
   </div>
-  <footer>A study aid for value stream mapping exercises. Numbers follow the exercise data; the SMED breakdown, costs and budget in Mission 1 are invented for the game.</footer>`;
-  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; render(); });
+  <footer>A study aid for value stream mapping exercises. The numbers follow the exercise data. The intern’s mistakes in question 1, and the SMED breakdown, costs and budget in the bonus mission, are invented for the game.</footer>`;
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.screen = b.dataset.go; if (b.dataset.go === 'lab') S.lab = { key:'B', target:1, st:null }; render(); });
   const r = document.getElementById('reset'); if (r) r.onclick = () => { S = fresh(); render(); };
 }
 
@@ -384,7 +724,7 @@ function renderM1(){
     </div>`;
   }
 
-  app.innerHTML = header('Mission 1 · Family A, 68 variants') + `<div class="stack">
+  app.innerHTML = header('Bonus · Exercise 1, question 2 (family A, 68 variants)') + `<div class="stack">
     <div class="btns" style="justify-content:space-between"><button class="btn small" id="home">← Missions</button>${steps(labels, m.step)}</div>${body}</div>`;
   wireM1();
 }
@@ -399,7 +739,7 @@ function debrief1(s){
     <p><b>Course answer:</b> only Machining blocks the target, and the fix is SMED on Machining, cutting each set-up to ≤ 2.1 min. Your workshop reached <b class="num">${f2(s.internal)} min</b> for <b class="num">${s.cost} k€</b>${s.cost === 12 && !S.m1.tpm ? ', the cheapest way to get there' : ''}.</p>
     <p>Why TPM alone is not enough: at 100% availability the limit only rises to ${f2((900 - 712.5) / 68)} min, still far below 10 min. Separating internal from external work is free and gets you from 10 to 7 min before you spend anything.</p>
     <p>Why it matters: a shorter EPE means smaller batches (≈ ${f1(450 / 68)} pcs per variant instead of ≈ ${f0(450 / 68 * s.epe0)}) and about ${f0(450 * s.epe0 / 2 - 450 / 2)} fewer pieces of cycle stock on the floor.</p>
-    <div class="btns"><button class="btn primary" data-go="m2">Mission 2 →</button><button class="btn" data-go="home">Back to missions</button></div></section>`;
+    <div class="btns"><button class="btn primary" data-go="lab">Open the lab</button><button class="btn" data-go="home">Back to missions</button></div></section>`;
 }
 
 function wireM1(){
@@ -436,7 +776,7 @@ function wireM1(){
     if ($('cfree')) $('cfree').onclick = chkFree;
     if ($('cepe')) $('cepe').onclick = chkEpe;
     ['free', 'epe'].forEach(id => { const el = $(id); if (el && !el.disabled) el.onkeydown = e => { if (e.key === 'Enter') (id === 'free' ? chkFree : chkEpe)(); }; });
-    const focus = !m.msg.freeOk ? $('free') : (!m.msg.epeOk ? $('epe') : null); if (focus) focus.focus();
+    const focus = !m.msg.freeOk ? $('free') : (!m.msg.epeOk ? $('epe') : null); if (focus) focus.focus({ preventScroll:true });
   }
   if (m.step === 3){
     app.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => {
@@ -557,7 +897,7 @@ function renderM2(){
       ${barsHTML(c.stages.map(s => { const mm = metrics(s, c.D, c.n, m.view); return { st:s, m:mm, note: s.co ? (mm.overflow > 0 ? `<b class="no">${f0(mm.overflow)} min short</b>` : `<b class="ok">fits</b> (${f0(mm.setNeed)} min of set-ups)`) : '' }; }))}${LEGEND}</section></div>`;
   }
 
-  app.innerHTML = header('Mission 2 · Family B, 6 variants') + `<div class="stack">
+  app.innerHTML = header('Question 2 · EPE of family B') + `<div class="stack">
     <div class="btns" style="justify-content:space-between"><button class="btn small" id="home">← Missions</button>${steps(labels, m.step)}</div>${body}</div>`;
   wireM2(M);
 }
@@ -583,7 +923,7 @@ function wireM2(M){
         m.msg[k] = `<b class="no">Not yet.</b> ${w ? w[1] : 'Time left = T × share × A − D × units × C/T, then EPE = n × C/O ÷ time left.'}`;
       }
       render();
-      const nextIn = app.querySelector('[data-in]:not([disabled])'); if (nextIn) nextIn.focus();
+      const nextIn = app.querySelector('[data-in]:not([disabled])'); if (nextIn) nextIn.focus({ preventScroll:true });
     };
     app.querySelectorAll('[data-chk]').forEach(b => b.onclick = () => check(b.dataset.chk, +b.dataset.i));
     app.querySelectorAll('[data-in]').forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter'){ const k = inp.dataset.in; check(k, +Object.keys(M2Q).find(x => M2Q[x] === k)); } });
@@ -596,7 +936,7 @@ function wireM2(M){
       else m.msg.ce = `<b class="no">Not quite.</b> Take the largest stage EPE and round it up to whole days.`;
       render(); };
     if ($('cce')) $('cce').onclick = chk;
-    if ($('ce') && !$('ce').disabled){ $('ce').onkeydown = e => { if (e.key === 'Enter') chk(); }; $('ce').focus(); }
+    if ($('ce') && !$('ce').disabled){ $('ce').onkeydown = e => { if (e.key === 'Enter') chk(); }; $('ce').focus({ preventScroll:true }); }
     app.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { const i = +b.dataset.st; if (m.picked.includes(i)) return; m.picked.push(i); m.tries.st = (m.tries.st || 0) + 1;
       if (i === 1){ m.stageOk = true; m.pts.st = m.tries.st === 1 ? 10 : m.tries.st === 2 ? 5 : 0; m.msg.st = `<b class="ok">The cutter.</b> 3.00 days, ahead of the press at 2.31 days.`; }
       else if (i === 0) m.msg.st = `<b class="no">Close.</b> The press has the longest set-up, but it still cycles in 2.31 days. One stage needs longer.`;
@@ -655,7 +995,8 @@ function updateLab(){
 
 /* ---------------------------------------------------------------- router */
 function render(){
-  if (S.screen === 'm1') renderM1();
+  if (S.screen === 'q1') renderQ1();
+  else if (S.screen === 'm1') renderM1();
   else if (S.screen === 'm2') renderM2();
   else if (S.screen === 'lab') renderLab();
   else renderHome();
